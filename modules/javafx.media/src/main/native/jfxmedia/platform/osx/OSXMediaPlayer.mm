@@ -338,6 +338,7 @@ JNIEXPORT jlong JNICALL Java_com_sun_media_jfxmediaimpl_platform_osx_OSXMediaPla
         eq = player.audioEqualizer;
     }
     [pool drain];
+    printf("AMDEBUG osxGetAudioEqualizerRef %p\n", eq);
     return ptr_to_jlong(eq);
 }
 
@@ -355,6 +356,7 @@ JNIEXPORT jlong JNICALL Java_com_sun_media_jfxmediaimpl_platform_osx_OSXMediaPla
         spectrum = player.audioSpectrum;
     }
     [pool drain];
+    printf("AMDEBUG osxGetAudioSpectrumRef %p\n", spectrum);
     return ptr_to_jlong(spectrum);
 }
 

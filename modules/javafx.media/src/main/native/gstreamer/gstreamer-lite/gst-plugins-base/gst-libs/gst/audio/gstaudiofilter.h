@@ -71,6 +71,9 @@ struct _GstAudioFilter {
 #define GST_AUDIO_FILTER_CHANNELS(filter) (GST_AUDIO_INFO_CHANNELS(GST_AUDIO_FILTER_INFO(filter)))
 #define GST_AUDIO_FILTER_BPF(filter)      (GST_AUDIO_INFO_BPF(GST_AUDIO_FILTER_INFO(filter)))
 #define GST_AUDIO_FILTER_BPS(filter)      (GST_AUDIO_INFO_BPS(GST_AUDIO_FILTER_INFO(filter)))
+#ifdef GSTREAMER_LITE
+#define GST_AUDIO_FILTER_DEPTH(filter)      (GST_AUDIO_FORMAT_INFO_DEPTH(GST_AUDIO_FILTER_INFO(filter)))
+#endif // GSTREAMER_LITE
 
 /**
  * GstAudioFilterClass:

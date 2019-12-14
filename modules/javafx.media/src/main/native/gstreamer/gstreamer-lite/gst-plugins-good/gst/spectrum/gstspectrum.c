@@ -102,6 +102,7 @@
 
 #include <string.h>
 #include <math.h>
+#include <stdio.h>
 #include "gstspectrum.h"
 
 GST_DEBUG_CATEGORY_STATIC (gst_spectrum_debug);
@@ -158,9 +159,25 @@ static GstFlowReturn gst_spectrum_transform_ip (GstBaseTransform * trans,
 static gboolean gst_spectrum_setup (GstAudioFilter * base,
     const GstAudioInfo * info);
 
+#if defined (GSTREAMER_LITE) && defined (OSX)
+gboolean gst_spectrum_setup_api (GstAudioFilter * base, const GstAudioInfo * info,
+                                 guint bps_user, guint bpf_user) {
+    GstSpectrum *spectrum = GST_SPECTRUM (base);
+    spectrum->bps_user = bps_user;
+    spectrum->bpf_user = bpf_user;
+    return gst_spectrum_setup(base, info);
+}
+
+GstFlowReturn
+gst_spectrum_transform_ip_api (GstBaseTransform * trans, GstBuffer * buffer) {
+    return gst_spectrum_transform_ip(trans, buffer);
+}
+#endif // GSTREAMER_LITE and OSX
+
 static void
 gst_spectrum_class_init (GstSpectrumClass * klass)
 {
+    printf("AMDEBUG gst_spectrum_class_init()\n");
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
   GstBaseTransformClass *trans_class = GST_BASE_TRANSFORM_CLASS (klass);
@@ -244,12 +261,19 @@ gst_spectrum_class_init (GstSpectrumClass * klass)
 static void
 gst_spectrum_init (GstSpectrum * spectrum)
 {
+    printf("AMDEBUG gst_spectrum_init()\n");
   spectrum->post_messages = DEFAULT_POST_MESSAGES;
   spectrum->message_magnitude = DEFAULT_MESSAGE_MAGNITUDE;
   spectrum->message_phase = DEFAULT_MESSAGE_PHASE;
   spectrum->interval = DEFAULT_INTERVAL;
   spectrum->bands = DEFAULT_BANDS;
   spectrum->threshold = DEFAULT_THRESHOLD;
+
+#if defined (GSTREAMER_LITE) && defined (OSX)
+  spectrum->bps_user = 0;
+  spectrum->bpf_user = 0;
+  spectrum->user_data = NULL;
+#endif // GSTREAMER_LITE and OSX
 
   g_mutex_init (&spectrum->lock);
 }
@@ -261,6 +285,8 @@ gst_spectrum_alloc_channel_data (GstSpectrum * spectrum)
   GstSpectrumChannel *cd;
   guint bands = spectrum->bands;
   guint nfft = 2 * bands - 2;
+
+  printf("AMDEBUG gst_spectrum_alloc_channel_data()\n");
 
   g_assert (spectrum->channel_data == NULL);
 
@@ -285,6 +311,7 @@ gst_spectrum_alloc_channel_data (GstSpectrum * spectrum)
 static void
 gst_spectrum_free_channel_data (GstSpectrum * spectrum)
 {
+    printf("AMDEBUG gst_spectrum_free_channel_data()\n");
   if (spectrum->channel_data) {
     gint i;
     GstSpectrumChannel *cd;
@@ -324,6 +351,8 @@ gst_spectrum_reset_state (GstSpectrum * spectrum)
 {
   GST_DEBUG_OBJECT (spectrum, "resetting state");
 
+  printf("AMDEBUG gst_spectrum_reset_state()\n");
+
   gst_spectrum_free_channel_data (spectrum);
   gst_spectrum_flush (spectrum);
 }
@@ -332,6 +361,8 @@ static void
 gst_spectrum_finalize (GObject * object)
 {
   GstSpectrum *spectrum = GST_SPECTRUM (object);
+
+  printf("AMDEBUG gst_spectrum_finalize()\n");
 
   gst_spectrum_reset_state (spectrum);
   g_mutex_clear (&spectrum->lock);
@@ -344,6 +375,8 @@ gst_spectrum_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
 {
   GstSpectrum *filter = GST_SPECTRUM (object);
+
+  printf("AMDEBUG gst_spectrum_set_property()\n");
 
   switch (prop_id) {
     case PROP_POST_MESSAGES:
@@ -359,6 +392,7 @@ gst_spectrum_set_property (GObject * object, guint prop_id,
       guint64 interval = g_value_get_uint64 (value);
       g_mutex_lock (&filter->lock);
       if (filter->interval != interval) {
+          printf("AMDEBUG gst_spectrum_set_property() interval %ld\n", interval);
         filter->interval = interval;
         gst_spectrum_reset_state (filter);
       }
@@ -400,6 +434,8 @@ gst_spectrum_get_property (GObject * object, guint prop_id,
 {
   GstSpectrum *filter = GST_SPECTRUM (object);
 
+  printf("AMDEBUG gst_spectrum_get_property()\n");
+
   switch (prop_id) {
     case PROP_POST_MESSAGES:
       g_value_set_boolean (value, filter->post_messages);
@@ -433,6 +469,8 @@ gst_spectrum_start (GstBaseTransform * trans)
 {
   GstSpectrum *spectrum = GST_SPECTRUM (trans);
 
+  printf("AMDEBUG gst_spectrum_start()\n");
+
   gst_spectrum_reset_state (spectrum);
 
   return TRUE;
@@ -442,6 +480,8 @@ static gboolean
 gst_spectrum_stop (GstBaseTransform * trans)
 {
   GstSpectrum *spectrum = GST_SPECTRUM (trans);
+
+  printf("AMDEBUG gst_spectrum_stop()\n");
 
   gst_spectrum_reset_state (spectrum);
 
@@ -623,6 +663,8 @@ gst_spectrum_setup (GstAudioFilter * base, const GstAudioInfo * info)
   gboolean multi_channel = spectrum->multi_channel;
   GstSpectrumInputData input_data = NULL;
 
+  printf("AMDEBUG gst_spectrum_setup()\n");
+
   g_mutex_lock (&spectrum->lock);
   switch (GST_AUDIO_INFO_FORMAT (info)) {
     case GST_AUDIO_FORMAT_S16:
@@ -638,6 +680,7 @@ gst_spectrum_setup (GstAudioFilter * base, const GstAudioInfo * info)
           multi_channel ? input_data_int32_max : input_data_mixed_int32_max;
       break;
     case GST_AUDIO_FORMAT_F32:
+        printf("AMDEBUG gst_spectrum_setup() GST_AUDIO_FORMAT_F32\n");
       input_data = multi_channel ? input_data_float : input_data_mixed_float;
       break;
     case GST_AUDIO_FORMAT_F64:
@@ -712,12 +755,21 @@ gst_spectrum_message_new (GstSpectrum * spectrum, GstClockTime timestamp,
   GValue *mcv = NULL, *pcv = NULL;
   GstClockTime endtime, running_time, stream_time;
 
+  printf("AMDEBUG gst_spectrum_message_new()\n");
+
   GST_DEBUG_OBJECT (spectrum, "preparing message, bands =%d ", spectrum->bands);
 
+#if defined (GSTREAMER_LITE) && defined (OSX)
+  // When running spectrum directly we cannot figure out time stamps, since we do not
+  // have full pipeline. Caller will be responsible to handle time stamps.
+  running_time = 0;
+  stream_time = 0;
+#else // GSTREAMER_LITE and OSX
   running_time = gst_segment_to_running_time (&trans->segment, GST_FORMAT_TIME,
       timestamp);
   stream_time = gst_segment_to_stream_time (&trans->segment, GST_FORMAT_TIME,
       timestamp);
+#endif // GSTREAMER_LITE and OSX
   /* endtime is for backwards compatibility */
   endtime = stream_time + duration;
 
@@ -781,6 +833,8 @@ gst_spectrum_run_fft (GstSpectrum * spectrum, GstSpectrumChannel * cd,
   gfloat *spect_phase = cd->spect_phase;
   GstFFTF32Complex *freqdata = cd->freqdata;
   GstFFTF32 *fft_ctx = cd->fft_ctx;
+
+//  printf("AMDEBUG gst_spectrum_run_fft()\n");
 
   for (i = 0; i < nfft; i++)
     input_tmp[i] = input[(input_pos + i) % nfft];
@@ -877,6 +931,12 @@ gst_spectrum_transform_ip (GstBaseTransform * trans, GstBuffer * buffer)
   channels = GST_AUDIO_FILTER_CHANNELS (spectrum);
   bps = GST_AUDIO_FILTER_BPS (spectrum);
   bpf = GST_AUDIO_FILTER_BPF (spectrum);
+#ifdef OSX
+  if (spectrum->bps_user != 0 && spectrum->bpf_user != 0) {
+    bps = spectrum->bps_user;
+    bpf = spectrum->bpf_user;
+  }
+#endif // OSX
   output_channels = spectrum->multi_channel ? channels : 1;
   max_value = (1UL << ((bps << 3) - 1)) - 1;
   bands = spectrum->bands;
@@ -902,6 +962,9 @@ gst_spectrum_transform_ip (GstBaseTransform * trans, GstBuffer * buffer)
   GstSpectrumChannel *cd;
   GstSpectrumInputData input_data;
 #endif // GSTREAMER_LITE
+
+//  printf("AMDEBUG gst_spectrum_transform_ip()\n");
+  printf("AMDEBUG interval %d rate %d channels %d bps %d bpf %d bands %d\n", spectrum->interval, rate, channels, bps, bpf, bands);
 
   g_mutex_lock (&spectrum->lock);
   gst_buffer_map (buffer, &map, GST_MAP_READ);
@@ -1019,6 +1082,7 @@ gst_spectrum_transform_ip (GstBaseTransform * trans, GstBuffer * buffer)
         m = gst_spectrum_message_new (spectrum, spectrum->message_ts,
             spectrum->interval);
 
+//        printf("AMDEBUG gst_spectrum_transform_ip() post spectrum message\n");
         gst_element_post_message (GST_ELEMENT (spectrum), m);
 #ifndef GSTREAMER_LITE
       }

@@ -32,6 +32,28 @@
 
 @class AVFMediaPlayer;
 
+class AVFTapContext {
+public:
+
+    AVFTapContext(AVFSoundLevelUnitPtr slu, AVFAudioSpectrumUnitPtr spectrum, AVFAudioEqualizerPtr eq);
+    ~AVFTapContext();
+
+    // Hold on to these while we're running
+    AVFSoundLevelUnitPtr audioSLU;
+    AVFAudioSpectrumUnitPtr audioSpectrum;
+    AVFAudioEqualizerPtr audioEQ;
+
+    // Audio parameters
+    UInt32 mSampleRate;
+    UInt32 mChannels;
+    UInt32 mMaxFrames;
+
+//    AudioUnit renderUnit;
+//    CMItemCount totalFrames;
+};
+
+typedef std::shared_ptr<AVFTapContext> AVFTapContextPtr;
+
 @interface AVFAudioProcessor : NSObject {
     AVAudioMix *_mixer;
 }
