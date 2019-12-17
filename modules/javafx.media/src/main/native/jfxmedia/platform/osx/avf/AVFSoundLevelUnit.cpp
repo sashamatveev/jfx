@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,12 +28,11 @@
 
 AVFSoundLevelUnit::AVFSoundLevelUnit() :
     mVolume(kDefaultSoundLevelParam_Volume),
-    mBalance(kDefaultSoundLevelParam_Balance) {
-    printf("AMDEBUG AVFSoundLevelUnit::AVFSoundLevelUnit()\n");
+    mBalance(kDefaultSoundLevelParam_Balance),
+    mChannels(0) {
 }
 
 AVFSoundLevelUnit::~AVFSoundLevelUnit() {
-    printf("AMDEBUG AVFSoundLevelUnit::~AVFSoundLevelUnit()\n");
 }
 
 Float32 AVFSoundLevelUnit::volume() {
@@ -84,24 +83,20 @@ Float32 AVFSoundLevelUnit::CalculateChannelLevel(int channelNum, int channelCoun
     return level;
 }
 
-OSStatus AVFSoundLevelUnit::ProcessBufferLists(const AudioBufferList & buffer,
-                                               UInt32 inFramesToProcess) {
-    OSStatus status = noErr;
+bool AVFSoundLevelUnit::ProcessBufferLists(const AudioBufferList & buffer,
+                                           UInt32 inFramesToProcess) {
     for (UInt32 i = 0; i < buffer.mNumberBuffers; i++) {
-        status = Process((const Float32 *) buffer.mBuffers[i].mData,
+        Process((const Float32 *) buffer.mBuffers[i].mData,
                 (Float32 *) buffer.mBuffers[i].mData,
                 inFramesToProcess,
                 i,
                 buffer.mBuffers[i].mNumberChannels);
-        if (status != noErr) {
-            return status;
-        }
     }
 
-    return status;
+    return true;
 }
 
-OSStatus AVFSoundLevelUnit::Process(const Float32 *inSourceP,
+void AVFSoundLevelUnit::Process(const Float32 *inSourceP,
         Float32 *inDestP,
         UInt32 inFramesToProcess,
         UInt32 channelNum,
@@ -135,6 +130,4 @@ OSStatus AVFSoundLevelUnit::Process(const Float32 *inSourceP,
                 inNumChannels,
                 inFramesToProcess);
     }
-
-    return noErr;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -58,8 +58,8 @@ public:
 
     // We'll use ProcessBufferLists as it sends all channels at once instead
     // of individual channels
-    virtual OSStatus ProcessBufferLists(const AudioBufferList& inBuffer,
-                                        UInt32 inFramesToProcess);
+    bool ProcessBufferLists(const AudioBufferList& inBuffer,
+                            UInt32 inFramesToProcess);
 
     // Parameter accessors
     virtual bool IsEnabled();

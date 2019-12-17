@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -36,11 +36,13 @@ AVFAudioSpectrumUnit::AVFAudioSpectrumUnit() : mSpectrumCallbackProc(NULL),
                                                mUpdateInterval(kDefaultAudioSpectrumUpdateInterval),
                                                mThreshold(kDefaultAudioSpectrumThreshold),
                                                mMixBufferFrameCapacity(0),
+                                               mSampleRate(0),
+                                               mChannels(0),
+                                               mMaxFrames(0),
                                                mSamplesPerInterval(0),
                                                mRebuildCrunch(true),
                                                mSpectrumElement(NULL),
                                                mSpectrum(NULL) {
-    printf("AMDEBUG AVFAudioSpectrumUnit::AVFAudioSpectrumUnit()\n");
     mMixBuffer.mNumberBuffers = 1;
     mMixBuffer.mBuffers[0].mData = NULL;
 
@@ -50,7 +52,6 @@ AVFAudioSpectrumUnit::AVFAudioSpectrumUnit() : mSpectrumCallbackProc(NULL),
 }
 
 AVFAudioSpectrumUnit::~AVFAudioSpectrumUnit() {
-    printf("AMDEBUG AVFAudioSpectrumUnit::~AVFAudioSpectrumUnit()\n");
     if (mMixBuffer.mBuffers[0].mData) {
         free(mMixBuffer.mBuffers[0].mData);
         mMixBuffer.mBuffers[0].mData = NULL;
@@ -59,10 +60,10 @@ AVFAudioSpectrumUnit::~AVFAudioSpectrumUnit() {
     ReleaseSpectralProcessor();
 }
 
-OSStatus AVFAudioSpectrumUnit::ProcessBufferLists(const AudioBufferList& inBuffer,
+bool AVFAudioSpectrumUnit::ProcessBufferLists(const AudioBufferList& inBuffer,
                                                   UInt32 inFramesToProcess) {
     if (!mEnabled) {
-        return noErr;
+        return true;
     }
 
     // (Re)allocate mix buffer if needed
@@ -111,18 +112,17 @@ OSStatus AVFAudioSpectrumUnit::ProcessBufferLists(const AudioBufferList& inBuffe
                 NULL,
                 NULL); // No need to free memory
         if (gstBuffer == NULL) {
-            printf("AMDEBUG gst_buffer_new_wrapped_full() failed\n");
-            return noErr; // AMTODO
+            return false;
         }
 
         GstFlowReturn result = gst_spectrum_transform_ip_api((GstBaseTransform *) mSpectrum, gstBuffer);
         if (result != GST_FLOW_OK) {
-            printf("AMDEBUG gst_spectrum_transform_ip_api() failed %d\n", result);
+            return false;
         }
         gst_buffer_unref(gstBuffer);
     }
 
-    return noErr;
+    return true;
 }
 
 bool AVFAudioSpectrumUnit::IsEnabled() {
@@ -132,12 +132,10 @@ bool AVFAudioSpectrumUnit::IsEnabled() {
 void AVFAudioSpectrumUnit::SetEnabled(bool isEnabled) {
     mEnabled = isEnabled;
     mRebuildCrunch = true;
-    printf("AMDEBUG AVFAudioSpectrumUnit::SetEnabled() %d\n", isEnabled);
 }
 
 void AVFAudioSpectrumUnit::SetBands(int bands, CBandsHolder* holder) {
     lockBands();
-    printf("AMDEBUG AVFAudioSpectrumUnit::SetBands() bands %d holder %p\n", bands, holder);
     if (mBands) {
         CBandsHolder::ReleaseRef(mBands);
         mBands = NULL;
@@ -154,17 +152,14 @@ void AVFAudioSpectrumUnit::SetBands(int bands, CBandsHolder* holder) {
 }
 
 size_t AVFAudioSpectrumUnit::GetBands() {
-//    printf("AMDEBUG AVFAudioSpectrumUnit::GetBands() mBandCount %d\n", mBandCount);
     return mBandCount;
 }
 
 double AVFAudioSpectrumUnit::GetInterval() {
-    printf("AMDEBUG AVFAudioSpectrumUnit::GetInterval() mUpdateInterval %f\n", mUpdateInterval);
     return mUpdateInterval;
 }
 
 void AVFAudioSpectrumUnit::SetInterval(double interval) {
-    printf("AMDEBUG AVFAudioSpectrumUnit::SetInterval() interval %f\n", interval);
     if (mUpdateInterval != interval) {
         mUpdateInterval = interval;
         mRebuildCrunch = true;
@@ -172,12 +167,10 @@ void AVFAudioSpectrumUnit::SetInterval(double interval) {
 }
 
 int AVFAudioSpectrumUnit::GetThreshold() {
-    printf("AMDEBUG AVFAudioSpectrumUnit::GetThreshold() %d\n", (int) mThreshold);
     return (int) mThreshold;
 }
 
 void AVFAudioSpectrumUnit::SetThreshold(int threshold) {
-    printf("AMDEBUG AVFAudioSpectrumUnit::SetThreshold() %d\n", threshold);
     if (mThreshold != (Float32) threshold) {
         mThreshold = (Float32) threshold;
         mRebuildCrunch = true;
@@ -185,7 +178,6 @@ void AVFAudioSpectrumUnit::SetThreshold(int threshold) {
 }
 
 void AVFAudioSpectrumUnit::UpdateBands(int size, const float* magnitudes, const float* phases) {
-//    printf("AMDEBUG AVFAudioSpectrumUnit::UpdateBands()\n");
     // lock now otherwise the bands could change while we're processing
     lockBands();
     if (!mBands || size <= 0 || !mEnabled) {
@@ -206,28 +198,23 @@ void AVFAudioSpectrumUnit::UpdateBands(int size, const float* magnitudes, const 
 }
 
 void AVFAudioSpectrumUnit::SetSampleRate(UInt32 rate) {
-    printf("AMDEBUG AVFAudioSpectrumUnit::SetSampleRate() rate %d\n", rate);
     mSampleRate = rate;
 }
 
 void AVFAudioSpectrumUnit::SetChannels(UInt32 count) {
-    printf("AMDEBUG AVFAudioSpectrumUnit::SetChannels() count %d\n", count);
     mChannels = count;
 }
 
 void AVFAudioSpectrumUnit::SetMaxFrames(UInt32 maxFrames) {
-    printf("AMDEBUG AVFAudioSpectrumUnit::SetMaxFrames() maxFrames %d\n", maxFrames);
     mMaxFrames = maxFrames;
 }
 
 void AVFAudioSpectrumUnit::SetSpectrumCallbackProc(AVFSpectrumUnitCallbackProc proc, void *context) {
-    printf("AMDEBUG AVFAudioSpectrumUnit::SetSpectrumCallbackProc() proc %p context %p\n", proc, context);
     mSpectrumCallbackProc = proc;
     mSpectrumCallbackContext = context;
 }
 
 static gboolean PostMessageCallback(GstElement * element, GstMessage * message) {
-    printf("AMDEBUG PostMessageCallback() element %p message %p\n", element, message);
     if (message == NULL) {
         return FALSE;
     }
@@ -279,14 +266,7 @@ void AVFAudioSpectrumUnit::SetupSpectralProcessor() {
     lockBands();
 
     mSpectrumElement = gst_element_factory_make("spectrum", NULL);
-    printf("AMDEBUG SetupSpectralProcessor() spectrumElement %p\n", mSpectrumElement);
-
-    if (GST_IS_SPECTRUM(mSpectrumElement)) {
-        printf("AMDEBUG SetupSpectralProcessor() true\n");
-    }
-
     mSpectrum = GST_SPECTRUM(mSpectrumElement);
-    printf("AMDEBUG SetupSpectralProcessor() spectrum %p\n", mSpectrum);
     mSpectrum->user_data = (void*)this;
 
     // Set our own callback for post message
@@ -308,8 +288,8 @@ void AVFAudioSpectrumUnit::SetupSpectralProcessor() {
 
     g_object_set(mSpectrumElement, "threshold", (int) mThreshold, NULL);
 
-    // Init additional information required by spectrum directly, since we are not
-    // setting caps on pads.
+    // Since we do not run spectrum element in pipeline and it will not get configured
+    // correctly, we need to set required information directly.
     GST_AUDIO_FILTER_RATE(mSpectrum) = mSampleRate;
     GST_AUDIO_FILTER_CHANNELS(mSpectrum) = 1; // Always 1 channel
 
@@ -317,10 +297,8 @@ void AVFAudioSpectrumUnit::SetupSpectralProcessor() {
     GstAudioInfo *info = gst_audio_info_new();
     gst_audio_info_init(info);
     gst_audio_info_set_format(info, GST_AUDIO_FORMAT_F32, mSampleRate, 1, NULL);
-    // bps = 4 - 32-bit float, bpf = 4 - 32-bit mono
-    if (!gst_spectrum_setup_api((GstAudioFilter*) mSpectrum, info, 4, 4)) {
-        printf("AMDEBUG SetupSpectralProcessor() gst_spectrum_setup() failed\n");
-    }
+    // bps = 4 bytes - 32-bit float, bpf = 4 bytes - 32-bit float mono
+    gst_spectrum_setup_api((GstAudioFilter*) mSpectrum, info, 4, 4);
     gst_audio_info_free(info);
 
     // Set element to playing state

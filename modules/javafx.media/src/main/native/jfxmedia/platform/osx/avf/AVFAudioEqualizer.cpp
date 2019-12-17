@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -261,12 +261,12 @@ AVFAudioEqualizer::AVFAudioEqualizer() : CAudioEqualizer(),
                                          mEQBands(),
                                          mEQBufferSize(0),
                                          mEQBufferA(NULL),
-                                         mEQBufferB(NULL) {
-    printf("AMDEBUG AVFAudioEqualizer::AVFAudioEqualizer()\n");
+                                         mEQBufferB(NULL),
+                                         mSampleRate(0),
+                                         mChannels(0) {
 }
 
 AVFAudioEqualizer::~AVFAudioEqualizer() {
-    printf("AMDEBUG AVFAudioEqualizer::~AVFAudioEqualizer()\n");
     if (mEQBufferA != NULL) {
         free(mEQBufferA);
         mEQBufferA = NULL;
@@ -363,6 +363,15 @@ void AVFAudioEqualizer::ResetBandParameters() {
         band->RecalculateParams();
         iter++; // here due to NULL ptr protection, otherwise we double increment
     }
+
+    // Clear temp buffers
+    if (mEQBufferA != NULL) {
+        memset(mEQBufferA, 0, mEQBufferSize * sizeof(double));
+    }
+
+    if (mEQBufferB != NULL) {
+        memset(mEQBufferB, 0, mEQBufferSize * sizeof(double));
+    }
 }
 
 void AVFAudioEqualizer::SetSampleRate(UInt32 rate) {
@@ -381,16 +390,16 @@ UInt32 AVFAudioEqualizer::GetChannels() {
     return mChannels;
 }
 
-OSStatus AVFAudioEqualizer::ProcessBufferLists(const AudioBufferList & buffer,
+bool AVFAudioEqualizer::ProcessBufferLists(const AudioBufferList & buffer,
                                                UInt32 inFramesToProcess) {
     for (UInt32 i = 0; i < buffer.mNumberBuffers; i++) {
         RunFilter((const Float32 *) buffer.mBuffers[i].mData,
-                (Float32 *) buffer.mBuffers[i].mData,
-                inFramesToProcess,
-                i);
+                  (Float32 *) buffer.mBuffers[i].mData,
+                  inFramesToProcess,
+                  i);
     }
 
-    return noErr;
+    return true;
 }
 
 void AVFAudioEqualizer::RunFilter(const Float32 *inSourceP,
