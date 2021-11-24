@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -58,6 +58,7 @@ final class HLSConnectionHolder extends ConnectionHolder {
     private static final int HLS_PROP_GET_MIMETYPE = 3;
     private static final int HLS_VALUE_MIMETYPE_MP2T = 1;
     private static final int HLS_VALUE_MIMETYPE_MP3 = 2;
+    private static final int HLS_VALUE_MIMETYPE_FMP4 = 3;
     private static final String CHARSET_UTF_8 = "UTF-8";
     private static final String CHARSET_US_ASCII = "US-ASCII";
 
@@ -857,6 +858,8 @@ final class HLSConnectionHolder extends ConnectionHolder {
                         return HLS_VALUE_MIMETYPE_MP2T;
                     } else if (stripParameters(mediaFiles.get(0)).endsWith(".mp3")) {
                         return HLS_VALUE_MIMETYPE_MP3;
+                    } else if (stripParameters(mediaFiles.get(0)).endsWith(".mp4")) {
+                        return HLS_VALUE_MIMETYPE_FMP4;
                     }
                 }
             }

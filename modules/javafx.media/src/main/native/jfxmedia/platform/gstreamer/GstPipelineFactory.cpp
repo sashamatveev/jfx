@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -45,6 +45,7 @@
 #define HLS_PROP_GET_MIMETYPE   3
 #define HLS_VALUE_MIMETYPE_MP2T 1
 #define HLS_VALUE_MIMETYPE_MP3  2
+#define HLS_VALUE_MIMETYPE_FMP4 3
 
 
 //*************************************************************************************************
@@ -220,6 +221,8 @@ uint32_t CGstPipelineFactory::CreateSourceElement(CLocator* locator, GstElement*
                 g_object_set (javaSource, "mimetype", CONTENT_TYPE_MP2T, NULL);
             else if (streamMimeType == HLS_VALUE_MIMETYPE_MP3)
                 g_object_set (javaSource, "mimetype", CONTENT_TYPE_MPA, NULL);
+            else if (streamMimeType == HLS_VALUE_MIMETYPE_FMP4)
+                g_object_set (javaSource, "mimetype", CONTENT_TYPE_MP4, NULL);
 
             g_object_set (javaSource,
                 "size", (gint64)locator->GetSizeHint(),
