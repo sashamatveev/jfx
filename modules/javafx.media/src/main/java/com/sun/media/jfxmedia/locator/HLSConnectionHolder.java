@@ -275,58 +275,60 @@ final class HLSConnectionHolder extends ConnectionHolder {
                 return;
             }
 
-            PlaylistParser parser = new PlaylistParser();
-            parser.load(playlistURI);
+            try {
+                PlaylistParser parser = new PlaylistParser();
+                parser.load(playlistURI);
 
-            if (parser.isVariantPlaylist()) {
-                variantPlaylist = new VariantPlaylist(playlistURI);
+                if (parser.isVariantPlaylist()) {
+                    variantPlaylist = new VariantPlaylist(playlistURI);
 
-                while (parser.hasNext()) {
-                    variantPlaylist.addPlaylistInfo(parser.getString(), parser.getInteger());
-                }
-            } else {
-                if (currentPlaylist == null) {
-                    currentPlaylist = new Playlist(parser.isLivePlaylist(), parser.getTargetDuration());
-                    currentPlaylist.setPlaylistURI(playlistURI);
-                }
-
-                if (currentPlaylist.setSequenceNumber(parser.getSequenceNumber())) {
                     while (parser.hasNext()) {
-                        currentPlaylist.addMediaFile(parser.getString(), parser.getDouble(), parser.getBoolean());
+                        variantPlaylist.addPlaylistInfo(parser.getString(), parser.getInteger());
                     }
-                }
+                } else {
+                    if (currentPlaylist == null) {
+                        currentPlaylist = new Playlist(parser.isLivePlaylist(), parser.getTargetDuration());
+                        currentPlaylist.setPlaylistURI(playlistURI);
+                    }
 
-                if (variantPlaylist != null) {
-                    variantPlaylist.addPlaylist(currentPlaylist);
-                }
-            }
+                    if (currentPlaylist.setSequenceNumber(parser.getSequenceNumber())) {
+                        while (parser.hasNext()) {
+                            currentPlaylist.addMediaFile(parser.getString(), parser.getDouble(), parser.getBoolean());
+                        }
+                    }
 
-            // Update variant playlists
-            if (variantPlaylist != null) {
-                while (variantPlaylist.hasNext()) {
-                    try {
-                        currentPlaylist = new Playlist(variantPlaylist.getPlaylistURI());
-                        currentPlaylist.update(null);
+                    if (variantPlaylist != null) {
                         variantPlaylist.addPlaylist(currentPlaylist);
-                    } catch (URISyntaxException e) {
-                    } catch (MalformedURLException e) {
                     }
                 }
-            }
 
-            // Always start with first data playlist
-            if (variantPlaylist != null) {
-                currentPlaylist = variantPlaylist.getPlaylist(0);
-                isBitrateAdjustable = true;
-            }
+                // Update variant playlists
+                if (variantPlaylist != null) {
+                    while (variantPlaylist.hasNext()) {
+                        try {
+                            currentPlaylist = new Playlist(variantPlaylist.getPlaylistURI());
+                            currentPlaylist.update(null);
+                            variantPlaylist.addPlaylist(currentPlaylist);
+                        } catch (URISyntaxException | MalformedURLException e) {
+                        }
+                    }
+                }
 
-            // Start reloading live playlist
-            if (currentPlaylist.isLive()) {
-                setReloadPlaylist(currentPlaylist);
-                putState(STATE_RELOAD_PLAYLIST);
-            }
+                // Always start with first data playlist
+                if (variantPlaylist != null) {
+                    currentPlaylist = variantPlaylist.getPlaylist(0);
+                    isBitrateAdjustable = true;
+                }
 
-            readySignal.countDown();
+                // Start reloading live playlist
+                if (currentPlaylist.isLive()) {
+                    setReloadPlaylist(currentPlaylist);
+                    putState(STATE_RELOAD_PLAYLIST);
+                }
+            } catch (Exception e) {
+            } finally {
+                readySignal.countDown();
+            }
         }
 
         private void stateReloadPlaylist() {
@@ -515,14 +517,40 @@ final class HLSConnectionHolder extends ConnectionHolder {
                 isEndList = true;
             } else if (line.startsWith("#EXT-X-DISCONTINUITY")) { // #EXT-X-DISCONTINUITY
                 isDiscontinuity = true;
+            } else if (line.startsWith("#EXT-X-MAP")) {
+                String[] s1 = line.split(":");
+                if (s1.length == 2 && s1[1].length() > 0) {
+                    String[] s2 = s1[1].split(",");
+                    if (s2.length > 0) {
+                        for (int i = 0; i < s2.length; i++) {
+                            s2[i] = s2[i].trim();
+                            if (s2[i].startsWith("URI")) {
+                                String[] s3 = s2[i].split("=");
+                                if (s3.length == 2 && s3[1].length() > 0) {
+                                    String dataFile =
+                                            s3[1].replaceAll("^\"+|\"+$", "");
+                                    dataListString.add(dataFile);
+                                    dataListBoolean.add(isDiscontinuity);
+                                    isDiscontinuity = false;
+
+                                    dataListDouble.add(Double.valueOf(targetDuration));
+                                }
+                            }
+                        }
+                    }
+                }
             } else if (isLinePlaylistURI) {
                 isLinePlaylistURI = false;
                 dataListString.add(line);
             } else if (isLineMediaFileURI) {
-                isLineMediaFileURI = false;
-                dataListString.add(line);
-                dataListBoolean.add(isDiscontinuity);
-                isDiscontinuity = false;
+                // We can have additional tags after #EXTINF such as
+                // #EXT-X-BITRATE for fMP4 playlist, so ignore them.
+                if (!line.startsWith("#")) {
+                    isLineMediaFileURI = false;
+                    dataListString.add(line);
+                    dataListBoolean.add(isDiscontinuity);
+                    isDiscontinuity = false;
+                }
             }
 
             return true;

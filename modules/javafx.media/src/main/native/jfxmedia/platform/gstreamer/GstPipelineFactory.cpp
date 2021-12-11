@@ -222,7 +222,7 @@ uint32_t CGstPipelineFactory::CreateSourceElement(CLocator* locator, GstElement*
             else if (streamMimeType == HLS_VALUE_MIMETYPE_MP3)
                 g_object_set (javaSource, "mimetype", CONTENT_TYPE_MPA, NULL);
             else if (streamMimeType == HLS_VALUE_MIMETYPE_FMP4)
-                g_object_set (javaSource, "mimetype", CONTENT_TYPE_MP4, NULL);
+                g_object_set (javaSource, "mimetype", CONTENT_TYPE_FMP4, NULL);
 
             g_object_set (javaSource,
                 "size", (gint64)locator->GetSizeHint(),
@@ -544,6 +544,8 @@ uint32_t CGstPipelineFactory::CreateHLSPipeline(GstElement* source, GstElement* 
         return CreateAVPipeline(source, "dshowwrapper", "dshowwrapper", true, "dshowwrapper", pVideoSink, pOptions, ppPipeline);
     else if (pOptions->GetStreamMimeType() == HLS_VALUE_MIMETYPE_MP3)
         return CreateAudioPipeline(source, "mpegaudioparse", "dshowwrapper", false, pOptions, ppPipeline);
+    else if (pOptions->GetStreamMimeType() == HLS_VALUE_MIMETYPE_FMP4)
+        return CreateAVPipeline(source, "qtdemux", "dshowwrapper", true, "dshowwrapper", pVideoSink, pOptions, ppPipeline);
     else
         return ERROR_PLATFORM_UNSUPPORTED;
 #elif TARGET_OS_MAC

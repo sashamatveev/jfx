@@ -40,5 +40,6 @@
 #define CONTENT_TYPE_M3U8   "application/vnd.apple.mpegurl"
 #define CONTENT_TYPE_M3U    "audio/mpegurl"
 #define CONTENT_TYPE_MP2T   "video/MP2T"
+#define CONTENT_TYPE_FMP4    "video/quicktime"
 
 #endif

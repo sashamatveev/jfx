@@ -41,4 +41,15 @@
     </ClCompile>
     <ClCompile Include="..\..\gstreamer\plugins\fxplugins.c" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\gstreamer\plugins\progressbuffer\cache.h">
+      <Filter>progressbuffer</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\gstreamer\plugins\progressbuffer\hlsprogressbuffer.h">
+      <Filter>progressbuffer</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\gstreamer\plugins\progressbuffer\progressbuffer.h">
+      <Filter>progressbuffer</Filter>
+    </ClInclude>
+  </ItemGroup>
 </Project>

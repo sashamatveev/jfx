@@ -1470,6 +1470,9 @@ static gboolean dshowwrapper_load_decoder_aac(GstStructure *s, GstDShowWrapper *
     gint rate = 48000;
     gint channels = 2;
 
+    if (decoder->pDecoder != NULL)
+        return TRUE;
+
     // Load decoder
     int count = sizeof(szAACDecoders)/sizeof(WCHAR*);
     CLSID decoderCLSID = GUID_NULL;
@@ -1651,6 +1654,9 @@ static gboolean dshowwrapper_load_decoder_mp3(GstStructure *s, GstDShowWrapper *
 {
     gboolean ret = FALSE;
     gint layer = 0;
+
+    if (decoder->pDecoder != NULL)
+        return TRUE;
 
     if (!gst_structure_get_int(s, "layer", &layer))
         return FALSE;
@@ -1842,6 +1848,9 @@ static void dshowwrapper_load_decoder_h264(GstDShowWrapper *decoder, CODEC_ID co
     HRESULT hr = S_OK;
     CLSID decoderCLSID = GUID_NULL;
 
+    if (decoder->pDecoder != NULL)
+        return;
+
     if (codecID == CODEC_ID_H264)
     {
         hr = CLSIDFromString(L"{212690FB-83E5-4526-8FD7-74478B7939CD}", &decoderCLSID);
@@ -1940,6 +1949,9 @@ static void dshowwrapper_load_decoder_h264(GstDShowWrapper *decoder, CODEC_ID co
 static gboolean dshowwrapper_load_decoder_h264(GstStructure *s, GstDShowWrapper *decoder)
 {
     gboolean ret = FALSE;
+
+    if (decoder->pDecoder != NULL)
+        return TRUE;
 
     // Init input
     sInputFormat inputFormat;
