@@ -530,10 +530,10 @@ final class HLSConnectionHolder extends ConnectionHolder {
                                     String dataFile =
                                             s3[1].replaceAll("^\"+|\"+$", "");
                                     dataListString.add(dataFile);
-                                    dataListBoolean.add(isDiscontinuity);
-                                    isDiscontinuity = false;
+                                    //dataListBoolean.add(isDiscontinuity);
+                                    //isDiscontinuity = false;
 
-                                    dataListDouble.add(Double.valueOf(targetDuration));
+                                    dataListDouble.add(Double.valueOf(0));
                                 }
                             }
                         }
@@ -575,9 +575,9 @@ final class HLSConnectionHolder extends ConnectionHolder {
 
         private URI playlistURI = null;
         private int infoIndex = -1;
-        private List<String> playlistsLocations = new ArrayList<String>();
-        private List<Integer> playlistsBitrates = new ArrayList<Integer>();
-        private List<Playlist> playlists = new ArrayList<Playlist>();
+        private List<String> playlistsLocations = new ArrayList<>();
+        private List<Integer> playlistsBitrates = new ArrayList<>();
+        private List<Playlist> playlists = new ArrayList<>();
         private String mediaFileExtension = null; // Will be set to media file extension of first playlist
 
         private VariantPlaylist(URI uri) {
@@ -886,7 +886,8 @@ final class HLSConnectionHolder extends ConnectionHolder {
                         return HLS_VALUE_MIMETYPE_MP2T;
                     } else if (stripParameters(mediaFiles.get(0)).endsWith(".mp3")) {
                         return HLS_VALUE_MIMETYPE_MP3;
-                    } else if (stripParameters(mediaFiles.get(0)).endsWith(".mp4")) {
+                    } else if (stripParameters(mediaFiles.get(0)).endsWith(".mp4") ||
+                               stripParameters(mediaFiles.get(0)).endsWith(".m4s")) {
                         return HLS_VALUE_MIMETYPE_FMP4;
                     }
                 }
