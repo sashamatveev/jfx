@@ -39,6 +39,8 @@ GST_DEBUG_CATEGORY (java_source_debug);
 ***********************************************************************************/
 // From HLSConnectionHolder.java
 #define HLS_PROP_GET_DURATION                1
+#define HLS_PROP_LOAD_SEGMENT                4
+#define HLS_PROP_SEGMENT_START_TIME          5
 #define HLS_VALUE_FLOAT_MULTIPLIER           1000
 
 /***********************************************************************************
@@ -574,8 +576,14 @@ next_event:
                 if ((element->mode & MODE_HLS) == MODE_HLS)
                 {
                     gint result = 0;
+                    gint start_time = 0;
                     gboolean wrong_state = FALSE;
-                    g_signal_emit(element, JAVA_SOURCE_GET_CLASS(element)->signals[SIGNAL_GET_STREAM_SIZE], 0, &result);
+                    g_signal_emit(element,
+                        JAVA_SOURCE_GET_CLASS(element)->signals[SIGNAL_PROPERTY],
+                        0, HLS_PROP_LOAD_SEGMENT, 0, &result);
+                    g_signal_emit(element,
+                        JAVA_SOURCE_GET_CLASS(element)->signals[SIGNAL_PROPERTY],
+                        0, HLS_PROP_SEGMENT_START_TIME, 0, &start_time);
 
                     g_mutex_lock(&element->lock);
                     wrong_state = (element->srcresult == GST_FLOW_FLUSHING);
@@ -599,7 +607,8 @@ next_event:
                     if (element->update)
                         segment.flags |= GST_SEGMENT_FLAG_UPDATE;
                     segment.rate = element->rate;
-                    segment.start = 0;
+                    //segment.start = 0;
+                    segment.start = ((gint64)start_time*GST_SECOND) / HLS_VALUE_FLOAT_MULTIPLIER;
                     segment.stop = result;
                     segment.time = element->position_time;
                     segment.position = element->position_time;

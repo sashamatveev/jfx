@@ -7078,7 +7078,7 @@ gst_qtdemux_process_adapter (GstQTDemux * demux, gboolean force)
            * and end up at the the moov (after mdat) again */
           if (demux->got_moov && QTDEMUX_N_STREAMS (demux) > 0 &&
               (!demux->fragmented
-                  || demux->last_moov_offset == demux->offset)) {
+                  || demux->last_moov_offset != demux->offset)) { // GSTREAMER_LITE
             GST_DEBUG_OBJECT (demux,
                 "Skipping moov atom as we have (this) one already");
           } else {
