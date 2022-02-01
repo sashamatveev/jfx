@@ -69,6 +69,7 @@ final class HLSConnectionHolder extends ConnectionHolder {
     private static final int HLS_VALUE_MIMETYPE_MP2T = 1;
     private static final int HLS_VALUE_MIMETYPE_MP3 = 2;
     private static final int HLS_VALUE_MIMETYPE_FMP4 = 3;
+    private static final int HLS_VALUE_MIMETYPE_AAC = 4;
     private static final String CHARSET_UTF_8 = "UTF-8";
     private static final String CHARSET_US_ASCII = "US-ASCII";
 
@@ -139,7 +140,11 @@ final class HLSConnectionHolder extends ConnectionHolder {
             return -1;
         }
 
-        return (long) (currentPlaylist.seek(position) * HLS_VALUE_FLOAT_MULTIPLIER);
+        long result = (long) (currentPlaylist.seek(position) * HLS_VALUE_FLOAT_MULTIPLIER);
+//        if (isFragmentedMP4()) {
+//            sendHeader = true;/
+//        }
+        return result;
     }
 
     @Override
@@ -239,6 +244,9 @@ final class HLSConnectionHolder extends ConnectionHolder {
 
         mediaFile = currentPlaylist.getNextMediaFile();
         if (mediaFile == null) {
+            if (isFragmentedMP4()) {
+                sendHeader = true;
+            }
             return -1;
         }
 
@@ -1008,6 +1016,8 @@ final class HLSConnectionHolder extends ConnectionHolder {
                         } else if (stripParameters(mediaFiles.get(0)).endsWith(".mp4")
                                 || stripParameters(mediaFiles.get(0)).endsWith(".m4s")) {
                             mimeType = HLS_VALUE_MIMETYPE_FMP4;
+                        } else if (stripParameters(mediaFiles.get(0)).endsWith(".aac")) {
+                            mimeType = HLS_VALUE_MIMETYPE_AAC;
                         }
                     }
                 }

@@ -52,7 +52,7 @@ using namespace std;
 
 // Debug
 #define MP2T_PTS_DEBUG 0
-#define H264_PTS_DEBUG 0
+#define H264_PTS_DEBUG 1
 #define AAC_PTS_DEBUG 0
 #define MP2T_PTS_INPUT_DEBUG 0
 #define H264_PTS_INPUT_DEBUG 0
@@ -359,6 +359,13 @@ static void gst_dshowwrapper_init (GstDShowWrapper *decoder)
     decoder->base_pts = GST_CLOCK_TIME_NONE;
 
     decoder->pending_event = NULL;
+
+    decoder->fragmented = FALSE;
+    decoder->width = 0;
+    decoder->height = 0;
+    decoder->lengthSizeMinusOne = 0;
+    decoder->avc_header = NULL;
+    decoder->segment_start_pts = GST_CLOCK_TIME_NONE;
 }
 
 static void gst_dshowwrapper_dispose(GObject* object)
@@ -402,6 +409,13 @@ static void gst_dshowwrapper_dispose(GObject* object)
             gst_event_unref (decoder->caps_event[i]);
             decoder->caps_event[i] = NULL;
         }
+    }
+
+    if (decoder->avc_header)
+    {
+        // INLINE - gst_buffer_unref()
+        gst_buffer_unref(decoder->avc_header);
+        decoder->avc_header = NULL;
     }
 
     G_OBJECT_CLASS(parent_class)->dispose(object);
@@ -548,6 +562,18 @@ static gboolean dshowwrapper_connect_filters(GstDShowWrapper *decoder, IBaseFilt
         {
             ret = TRUE;
             goto done;
+        }
+        else if (hr == VFW_E_ALREADY_CONNECTED)
+        {
+            hr = decoder->pGraph->Disconnect(pOutput);
+            if (SUCCEEDED(hr))
+                hr = decoder->pGraph->ConnectDirect(pOutput, pInput, NULL);
+                
+            if (SUCCEEDED(hr))
+            {
+                ret = TRUE;
+                goto done;
+            }
         }
 
         if (pOutput != NULL)
@@ -706,6 +732,28 @@ int dshowwrapper_deliver(GstBuffer *pBuffer, sUserData *pUserData)
         GST_BUFFER_FLAG_SET(pBuffer, GST_BUFFER_FLAG_DISCONT); // Caps changed
     }
 
+    // Special case for fragmented MP4. We cannot Stop/Run graph otherwise decoder will stop
+    // producing data and no solution for this issue is found. So, flush will not work and we
+    // need manually drop frames that outside of segment. This only required after seek.
+    //if (decoder->fragmented && decoder->segment_start_pts != GST_CLOCK_TIME_NONE && decoder->out_buffer[pUserData->output_index])
+    //{
+    //    if (GST_BUFFER_TIMESTAMP_IS_VALID(decoder->out_buffer[pUserData->output_index]))
+    //    {
+    //        if (GST_BUFFER_TIMESTAMP(decoder->out_buffer[pUserData->output_index]) < decoder->segment_start_pts ||
+    //            GST_BUFFER_TIMESTAMP(decoder->out_buffer[pUserData->output_index]) > (decoder->segment_start_pts + 10000000000))
+    //        {
+    //            g_print("AMDEBUG DROPPING FRAME  %I64u %I64u\n", GST_BUFFER_TIMESTAMP(decoder->out_buffer[pUserData->output_index]), decoder->segment_start_pts);
+    //            // INLINE - gst_buffer_unref()
+    //            gst_buffer_unref(decoder->out_buffer[pUserData->output_index]);
+    //            decoder->out_buffer[pUserData->output_index] = NULL;
+    //        }
+    //        else
+    //        {
+    //            decoder->segment_start_pts = GST_CLOCK_TIME_NONE;
+    //        }
+    //    }
+    //}
+
     if (decoder->out_buffer[pUserData->output_index] != NULL)
     {
         if (decoder->enable_pts)
@@ -789,13 +837,22 @@ int dshowwrapper_deliver(GstBuffer *pBuffer, sUserData *pUserData)
             else
                 g_print("JFXMEDIA OUTPUT AAC  -1\n");
         }
-#endif
+#endif  
+
+        //if (decoder->fragmented && decoder->segment_start_pts != GST_CLOCK_TIME_NONE)
+        //{
+        //    //GST_BUFFER_TIMESTAMP(decoder->out_buffer[pUserData->output_index]) += 10000000000;
+        //    //decoder->segment_start_pts = GST_CLOCK_TIME_NONE;
+        //}
 
         // Set output buffer to NULL before delivering it, otherwise flush stop can release it right after
         // we finish delivery.
-        pBufferOut = decoder->out_buffer[pUserData->output_index];
-        decoder->out_buffer[pUserData->output_index] = NULL;
-        ret = gst_pad_push(decoder->srcpad[pUserData->output_index], pBufferOut);
+        if (decoder->out_buffer[pUserData->output_index] != NULL)
+        {
+            pBufferOut = decoder->out_buffer[pUserData->output_index];
+            decoder->out_buffer[pUserData->output_index] = NULL;
+            ret = gst_pad_push(decoder->srcpad[pUserData->output_index], pBufferOut);
+        }
 
         // Unref pBuffer if we will return
         if (decoder->is_eos[pUserData->output_index] || decoder->is_flushing || ret != GST_FLOW_OK)
@@ -1083,6 +1140,13 @@ static gboolean dshowwrapper_create_graph(GstDShowWrapper *decoder)
         return FALSE;
     }
 
+    // IMediaControl
+    hr = decoder->pGraph->QueryInterface(IID_IMediaSeeking, (void**)&decoder->pMediaSeeking);
+    if (FAILED(hr))
+    {
+        return FALSE;
+    }
+
     hr = decoder->pMediaControl->Run();
     if (FAILED(hr))
     {
@@ -1192,16 +1256,16 @@ static void dshowwrapper_destroy_graph (GstDShowWrapper *decoder)
         CoUninitialize();
 }
 
-gsize dshowwrapper_get_avc_config(void *in, gsize in_size, BYTE *out, gsize out_size, guint *avcProfile, guint *avcLevel, guint *lengthSizeMinusOne)
+gsize dshowwrapper_get_avc_config(void *in, gsize in_size, BYTE *out, gsize out_size, guint *lengthSizeMinusOne, gboolean start_code)
 {
     guintptr bdata = (guintptr)in;
     AVCCHeader *header = NULL;
     guint ppsCount = 0;
-    guint16 structSize = 0;
+    guint16 nalUnitLength = 0;
     guint ii = 0;
-    gsize size = 0;
     gsize in_bytes_count = 0;
     gsize out_bytes_count = 0;
+    guint8 startCode[3] = { 0x00, 0x00, 0x01 };
 
     if (in_size < sizeof(AVCCHeader))
         return 0;
@@ -1211,70 +1275,95 @@ gsize dshowwrapper_get_avc_config(void *in, gsize in_size, BYTE *out, gsize out_
     header->lengthSizeMinusOne &= 0x03;
     header->spsCount &= 0x1F;
 
-    *avcProfile = header->avcProfile;
-    *avcLevel = header->avcLevel;
     *lengthSizeMinusOne = header->lengthSizeMinusOne;
 
     bdata += sizeof(AVCCHeader); // length of first SPS struct, if any
     in_bytes_count += sizeof(AVCCHeader);
 
-    for (ii = 0; ii < header->spsCount; ii++) {
-
+    for (ii = 0; ii < header->spsCount; ii++)
+    {
         if ((in_bytes_count + 2) > in_size)
             return 0;
 
-        structSize = ((guint16)*(guint8*)bdata) << 8;
+        nalUnitLength = ((guint16)*(guint8*)bdata) << 8;
         bdata++;
-        structSize |= (guint16)*(guint8*)bdata;
+        nalUnitLength |= (guint16)*(guint8*)bdata;
         bdata++;
 
-        out_bytes_count += (structSize + 2);
-        if (out_bytes_count > out_size)
+        // Set start code
+        if (start_code)
+        {
+            if ((out_bytes_count + sizeof(startCode)) > out_size)
+                return 0;
+
+            memcpy(out, &startCode[0], sizeof(startCode));
+            out += sizeof(startCode); out_bytes_count += sizeof(startCode);
+        }
+        else
+        {
+            memcpy(out, (guint8*)(bdata - 2), 2);
+            out += 2; out_bytes_count += 2;
+        }
+
+        if ((out_bytes_count + nalUnitLength) > out_size)
             return 0;
 
-        in_bytes_count += structSize;
-        if (in_bytes_count > in_size)
+        if ((in_bytes_count + nalUnitLength) > in_size)
             return 0;
 
-        memcpy(out, ((guint8*)bdata - 2), structSize + 2);
-        size += structSize + 2;
-        out += size;
-        bdata += structSize;
+        // Copy nal unit
+        memcpy(out, (guint8*)bdata, nalUnitLength);
+        bdata += nalUnitLength; in_bytes_count += nalUnitLength;
+        out += nalUnitLength; out_bytes_count += nalUnitLength;
+
     }
 
     if ((in_bytes_count + 1) > in_size)
-            return 0;
+        return 0;
 
     ppsCount = *(guint8*)bdata;
     bdata++;
 
     in_bytes_count += 1;
 
-    for (ii = 0; ii < ppsCount; ii++) {
-
+    for (ii = 0; ii < ppsCount; ii++)
+    {
         if ((in_bytes_count + 2) > in_size)
             return 0;
 
-        structSize = ((guint16)*(guint8*)bdata) << 8;
+        nalUnitLength = ((guint16)*(guint8*)bdata) << 8;
         bdata++;
-        structSize |= (guint16)*(guint8*)bdata;
+        nalUnitLength |= (guint16)*(guint8*)bdata;
         bdata++;
 
-        out_bytes_count += (structSize + 2);
-        if (out_bytes_count > out_size)
+        // Set start code
+        if (start_code)
+        {
+            if ((out_bytes_count + sizeof(startCode)) > out_size)
+                return 0;
+
+            memcpy(out, &startCode[0], sizeof(startCode));
+            out += sizeof(startCode); out_bytes_count += sizeof(startCode);
+        }
+        else
+        {
+            memcpy(out, (guint8*)(bdata - 2), 2);
+            out += 2; out_bytes_count += 2;
+        }
+
+        if ((out_bytes_count + nalUnitLength) > out_size)
             return 0;
 
-        in_bytes_count += structSize;
-        if (in_bytes_count > in_size)
+        if ((in_bytes_count + nalUnitLength) > in_size)
             return 0;
 
-        memcpy(out, ((guint8*)bdata - 2), structSize + 2);
-        size += structSize + 2;
-        out += size;
-        bdata += structSize;
+        // Copy nal unit
+        memcpy(out, (guint8*)bdata, nalUnitLength);
+        bdata += nalUnitLength; in_bytes_count += nalUnitLength;
+        out += nalUnitLength; out_bytes_count += nalUnitLength;
     }
 
-    return size;
+    return out_bytes_count;
 }
 
 static gboolean dshowwrapper_is_decoder_by_codec_id_supported(gint codec_id)
@@ -1933,7 +2022,7 @@ static void dshowwrapper_load_decoder_h264(GstDShowWrapper *decoder, JFX_CODEC_I
                     VARIANT value;
                     memset(&value, 0, sizeof(VARIANT));
                     value.vt = VT_BOOL;
-                    value.ulVal = VARIANT_TRUE;
+                    value.ulVal = VARIANT_FALSE;
                     hr = pCodecAPI->SetValue(&CODECAPI_AVDecVideoDropPicWithMissingRef, &value);
                 }
             }
@@ -1943,12 +2032,88 @@ static void dshowwrapper_load_decoder_h264(GstDShowWrapper *decoder, JFX_CODEC_I
     }
 }
 
+static gboolean dshowwrapper_reload_decoder_h264_fragmented(GstDShowWrapper *decoder, sInputFormat *pInputFormat, sOutputFormat *pOutputFormat)
+{
+    HRESULT hr = S_OK;
+    OAFilterState fs = 0;
+    IPin *pOutput = NULL;
+
+    if (decoder->pMediaControl)
+    {
+        decoder->pMediaControl->Stop();
+        decoder->pMediaControl->GetState(5000, &fs);
+    }
+
+    if (decoder->pDecoder != NULL && decoder->pGraph != NULL)
+    {
+        decoder->pGraph->RemoveFilter(decoder->pDecoder);
+        decoder->pDecoder->Release();
+        decoder->pDecoder = NULL;
+    }
+
+    hr = decoder->pSrc->InitMediaType(pInputFormat);
+    if (FAILED(hr))
+        return FALSE;
+
+    hr = decoder->pSink[0]->InitMediaType(pOutputFormat);
+    if (FAILED(hr))
+        return FALSE;
+
+    dshowwrapper_load_decoder_h264(decoder, JFX_CODEC_ID_AVC1);
+    if (decoder->pDecoder == NULL)
+        return FALSE;
+
+    // Add decoder
+    hr = decoder->pGraph->AddFilter(decoder->pDecoder, L"Decoder");
+    if (FAILED(hr))
+    {
+        return FALSE;
+    }
+
+    if (!dshowwrapper_connect_filters(decoder, decoder->pISrc, decoder->pDecoder))
+    {
+        return FALSE;
+    }
+
+    if (!dshowwrapper_connect_filters(decoder, decoder->pDecoder, decoder->pISink[0]))
+    {
+        return FALSE;
+    }
+
+   
+    if (decoder->pMediaControl)
+        decoder->pMediaControl->Run();
+
+    return TRUE;
+}
+
+//if (updateformat)
+//{
+//    //if (decoder->pMediaControl)
+//    //    decoder->pMediaControl->Stop();
+
+//    outputFormat.bEnableDynamicFormatChanges = 1;
+
+//    hr = decoder->pSink[0]->InitMediaType(&outputFormat);
+//    if (FAILED(hr))
+//        goto exit;
+
+//    if (!dshowwrapper_connect_filters(decoder, decoder->pDecoder, decoder->pISink[0]))
+//        goto exit;
+
+//    if (decoder->pMediaControl)
+//        decoder->pMediaControl->Run();
+//}
+//
+//    return TRUE;
+//}
+
 static gboolean dshowwrapper_load_decoder_h264(GstStructure *s, GstDShowWrapper *decoder)
 {
     gboolean ret = FALSE;
+    HRESULT hr = S_OK;
 
-    if (decoder->pDecoder != NULL)
-        return TRUE;
+    gboolean updateformat = FALSE;
 
     // Init input
     sInputFormat inputFormat;
@@ -1962,14 +2127,15 @@ static gboolean dshowwrapper_load_decoder_h264(GstStructure *s, GstDShowWrapper 
     gint height = 0;
     const GValue *v = NULL;
     GstBuffer *codec_data = NULL;
+    GstMapInfo codec_data_info;
+    BYTE header[MAX_HEADER_SIZE];
+    gint header_size = 0;
+
+    if (!gst_structure_get_boolean(s, "fragmented", &decoder->fragmented))
+        decoder->fragmented = FALSE;
 
     if (gst_structure_get_int(s, "width", &width) && gst_structure_get_int(s, "height", &height))
     {
-        // Load AVC1 decoder
-        dshowwrapper_load_decoder_h264(decoder, JFX_CODEC_ID_AVC1);
-        if (decoder->pDecoder == NULL)
-            return FALSE;
-
         v = gst_structure_get_value(s, "codec_data");
         if (v == NULL)
             return FALSE;
@@ -1977,21 +2143,73 @@ static gboolean dshowwrapper_load_decoder_h264(GstStructure *s, GstDShowWrapper 
         codec_data = gst_value_get_buffer(v);
         if (codec_data == NULL)
             return FALSE;
+    }
 
-        // GetAVCConfig
-        BYTE header[MAX_HEADER_SIZE];
-        gint header_size = 0;
-        guint avcProfile = 0;
-        guint avcLevel = 0;
-        guint lengthSizeMinusOne = 0;
-        GstMapInfo info;
+    // Get AVC header if fragmented, so we can send it with stream in chain
+    //if (decoder->updateinput)
+    //{
+    //    if (decoder->avc_header)
+    //    {
+    //        // INLINE - gst_buffer_unref()
+    //        gst_buffer_unref(decoder->avc_header);
+    //        decoder->avc_header = NULL;
+    //    }
+    //    
+    //    if (codec_data != NULL && gst_buffer_get_size(codec_data) <= MAX_HEADER_SIZE)
+    //    {
+    //        if (gst_buffer_map(codec_data, &codec_data_info, GST_MAP_READ))
+    //        {
+    //            if (codec_data_info.size <= MAX_HEADER_SIZE)
+    //                header_size = dshowwrapper_get_avc_config(codec_data_info.data, codec_data_info.size, header, MAX_HEADER_SIZE, &decoder->lengthSizeMinusOne, TRUE);
+    //            gst_buffer_unmap(codec_data, &codec_data_info);
+
+    //            if (header_size > 0)
+    //            {
+    //                decoder->avc_header = gst_buffer_new_allocate(NULL, header_size, NULL);
+    //                if (decoder->avc_header != NULL)
+    //                {
+    //                    gst_buffer_fill(decoder->avc_header, 0, header, header_size);
+    //                    decoder->avc_header = gst_buffer_make_writable(decoder->avc_header);
+    //                    GST_BUFFER_FLAG_SET(decoder->avc_header, GST_BUFFER_FLAG_DISCONT);
+    //                }
+    //            }
+
+    //            if (decoder->avc_header == NULL)
+    //                return FALSE;
+    //        }
+    //    }
+    //}
+
+    //if (!decoder->fragmented && decoder->pDecoder != NULL)
+    if (decoder->pDecoder != NULL)
+    {
+        if (decoder->fragmented && (decoder->width != width || decoder->height != height) && decoder->width != 0 && decoder->height != 0)
+            updateformat = TRUE;
+        else
+            return TRUE;
+    }
+
+    // If we decoding fragmented MP4, then qtdemux will provide us with MEDIASUBTYPE_AVC1 (bitstream without
+    // start codes and headers), but since we cannot dynamic switch formats in this case we need to use MEDIASUBTYPE_H264
+    // (bitstream with start code and headers embeded inside stream). So, for fragmented MP4 we will init decoder
+    // for MEDIASUBTYPE_H264 and convert stream to use start codes and we will embed headers once qtdemux
+    // provides it via setting new caps. Note: MP2TS HLS provides us MEDIASUBTYPE_H264 and thus dynamic
+    // switching between streams works fine.
+    if (width != 0 && height != 0)
+    {
+        // Load AVC1 decoder
+        dshowwrapper_load_decoder_h264(decoder, JFX_CODEC_ID_AVC1);
+        if (decoder->pDecoder == NULL)
+            return FALSE;
+
+        // GetAVCConfig        
         if (codec_data != NULL && gst_buffer_get_size(codec_data) <= MAX_HEADER_SIZE)
         {
-            if (gst_buffer_map(codec_data, &info, GST_MAP_READ))
+            if (gst_buffer_map(codec_data, &codec_data_info, GST_MAP_READ))
             {
-                if (info.size <= MAX_HEADER_SIZE)
-                    header_size = dshowwrapper_get_avc_config(info.data, info.size, header, 256, &avcProfile, &avcLevel, &lengthSizeMinusOne);
-                gst_buffer_unmap(codec_data, &info);
+                if (codec_data_info.size <= MAX_HEADER_SIZE)
+                    header_size = dshowwrapper_get_avc_config(codec_data_info.data, codec_data_info.size, header, MAX_HEADER_SIZE, &decoder->lengthSizeMinusOne, FALSE);
+                gst_buffer_unmap(codec_data, &codec_data_info);
             }
         }
         else
@@ -2033,7 +2251,7 @@ static gboolean dshowwrapper_load_decoder_h264(GstStructure *s, GstDShowWrapper 
         pbFormat->hdr.bmiHeader.biPlanes = 1;
 
         // MPEG2VIDEOINFO
-        pbFormat->dwFlags = lengthSizeMinusOne + 1;
+        pbFormat->dwFlags = decoder->lengthSizeMinusOne + 1;
         memcpy(pbFormat->dwSequenceHeader, header, header_size);
         pbFormat->cbSequenceHeader = header_size;
 
@@ -2045,6 +2263,11 @@ static gboolean dshowwrapper_load_decoder_h264(GstStructure *s, GstDShowWrapper 
         // See JDK-8133841.
         if ((width < height) || (width > 1920 && height > 1080))
             outputFormat.bEnableDynamicFormatChanges = 1;
+
+        //outputFormat.bEnableDynamicFormatChanges = 1;
+
+        decoder->width = width;
+        decoder->height = height;
     }
     else
     {
@@ -2080,7 +2303,7 @@ static gboolean dshowwrapper_load_decoder_h264(GstStructure *s, GstDShowWrapper 
         hdr->bmiHeader.biCompression = '462H';
     }
 
-    if (!dshowwrapper_create_ds_source(decoder, &inputFormat))
+    if (!updateformat && !dshowwrapper_create_ds_source(decoder, &inputFormat))
         goto exit;
 
     gint framerate_num = 0;
@@ -2191,8 +2414,46 @@ static gboolean dshowwrapper_load_decoder_h264(GstStructure *s, GstDShowWrapper 
         goto exit;
     }
 
-    if (!dshowwrapper_create_ds_sink(decoder, &outputFormat, 0, true))
+    if (!updateformat && !dshowwrapper_create_ds_sink(decoder, &outputFormat, 0, true))
         goto exit;
+
+
+    //// Update input format
+    if (updateformat)
+    {
+        if (!dshowwrapper_reload_decoder_h264_fragmented(decoder, &inputFormat, &outputFormat))
+            goto exit;
+    //    if (decoder->pMediaControl)
+    //        decoder->pMediaControl->Stop();
+
+    //    hr = decoder->pSrc->InitMediaType(&inputFormat);
+    //    if (FAILED(hr))
+    //        goto exit;
+
+    //    if (!dshowwrapper_connect_filters(decoder, decoder->pISrc, decoder->pDecoder))
+    //        goto exit;
+
+    //    if (decoder->pMediaControl)
+    //        decoder->pMediaControl->Run();
+    }
+
+    //if (updateformat)
+    //{
+    //    //if (decoder->pMediaControl)
+    //    //    decoder->pMediaControl->Stop();
+
+    //    outputFormat.bEnableDynamicFormatChanges = 1;
+
+    //    hr = decoder->pSink[0]->InitMediaType(&outputFormat);
+    //    if (FAILED(hr))
+    //        goto exit;
+
+    //    if (!dshowwrapper_connect_filters(decoder, decoder->pDecoder, decoder->pISink[0]))
+    //        goto exit;
+
+    //    if (decoder->pMediaControl)
+    //        decoder->pMediaControl->Run();
+    //}
 
     ret = TRUE;
 
@@ -2794,6 +3055,55 @@ static GstClockTime dshowwrapper_clock_get_time(GstClock *clock, gpointer user_d
 }
 #endif // ENABLE_CLOCK
 
+static void dshowwrapper_nalu_to_start_code(GstBuffer* pGstBuffer)
+{
+    GstMapInfo info;
+    BYTE *pbBuffer = NULL;
+    guint size = 0;
+    gint leftSize = 0;
+
+    if (pGstBuffer == NULL)
+        return;
+
+    if (!gst_buffer_map(pGstBuffer, &info, GST_MAP_READWRITE))
+        return;
+
+    pbBuffer = info.data;
+    size = info.size;
+    leftSize = info.size;
+
+    if (pbBuffer == NULL || size < 4)
+    {
+        gst_buffer_unmap(pGstBuffer, &info);
+        return;
+    }
+
+    do
+    {
+        guint naluLen = ((guint)*(guint8*)pbBuffer) << 24;
+        naluLen |= ((guint)*(guint8*)(pbBuffer + 1)) << 16;
+        naluLen |= ((guint)*(guint8*)(pbBuffer + 2)) << 8;
+        naluLen |= ((guint)*(guint8*)(pbBuffer + 3));
+
+        if (naluLen <= 1) // Start code or something wrong
+        {
+            gst_buffer_unmap(pGstBuffer, &info);
+            return;
+        }
+
+        pbBuffer[0] = 0x00;
+        pbBuffer[1] = 0x00;
+        pbBuffer[2] = 0x00;
+        pbBuffer[3] = 0x01;
+
+        leftSize -= (naluLen + 4);
+        pbBuffer += (naluLen + 4);
+
+    } while (leftSize > 0);
+
+    gst_buffer_unmap(pGstBuffer, &info);
+}
+
 // Processes input buffers
 static GstFlowReturn dshowwrapper_chain (GstPad * pad, GstObject *parent, GstBuffer * buf)
 {
@@ -2888,8 +3198,26 @@ static GstFlowReturn dshowwrapper_chain (GstPad * pad, GstObject *parent, GstBuf
         decoder->force_discontinuity = FALSE;
     }
 
+    //if (decoder->fragmented && decoder->avc_header != NULL)
+    //{
+    //    //GST_BUFFER_TIMESTAMP(decoder->avc_header) = GST_BUFFER_TIMESTAMP(buf);
+    //    //GST_BUFFER_DURATION(decoder->avc_header) = GST_BUFFER_DURATION(buf);
+    //    HRESULT hr = decoder->pSrc->DeliverSample(decoder->avc_header);
+    //    // DeliverSample() will unref avc_header
+    //    decoder->avc_header = NULL;
+    //    if (FAILED(hr) || decoder->is_flushing)
+    //        return GST_FLOW_FLUSHING;
+    //}
+
+    //if (decoder->fragmented)
+    //{
+    //    dshowwrapper_nalu_to_start_code(buf);
+    //    //GST_BUFFER_TIMESTAMP(buf) = GST_CLOCK_TIME_NONE;
+    //    //GST_BUFFER_DURATION(buf) = GST_CLOCK_TIME_NONE;
+    //}
+
     if (decoder->pSrc)
-    {
+    {        
         HRESULT hr = decoder->pSrc->DeliverSample(buf);
         if (FAILED(hr) || decoder->is_flushing)
             return GST_FLOW_FLUSHING;
@@ -2920,6 +3248,7 @@ static gboolean dshowwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent
     GstDShowWrapper *decoder = GST_DSHOWWRAPPER (parent);
     GstSegment segment;
     GstSegment newsegment;
+    HRESULT hr = S_OK;
 
     switch (GST_EVENT_TYPE (event))
     {
@@ -2927,7 +3256,6 @@ static gboolean dshowwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent
         gst_event_copy_segment(event, &segment);
         if (decoder->enable_position)
         {
-            gst_event_copy_segment(event, &segment);
             if (segment.format == GST_FORMAT_TIME)
             {
                 decoder->last_stop = segment.position;
@@ -2935,7 +3263,6 @@ static gboolean dshowwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent
         }
         if (decoder->eInputFormat == MEDIA_FORMAT_STREAM_MP2T) // Resend new segment event with GST_FORMAT_TIME
         {
-            gst_event_copy_segment(event, &segment);
             // INLINE - gst_event_unref()
             gst_event_unref (event);
 
@@ -2964,6 +3291,16 @@ static gboolean dshowwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent
         {
             decoder->is_eos[i] = FALSE;
         }
+
+        
+        /*if (decoder->fragmented)
+        {
+            decoder->segment_start_pts = segment.start;
+            LONGLONG current = segment.start / 100;
+            LONGLONG stop = -1;
+            hr = decoder->pMediaSeeking->SetPositions(&current, AM_SEEKING_AbsolutePositioning, &stop, 0);
+        }*/
+
         break;
     case GST_EVENT_FLUSH_START:
         {
@@ -2981,8 +3318,16 @@ static gboolean dshowwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent
 
             ret = dshowwrapper_push_sink_event(decoder, event);
 
-            if (decoder->pMediaControl)
-                decoder->pMediaControl->Stop();
+            //if (decoder->fragmented)
+            //{
+            //    if (decoder->is_eos_received && decoder->pMediaControl)
+            //        decoder->pMediaControl->Stop();
+            //}
+            //else
+            //{
+                if (decoder->pMediaControl)
+                    decoder->pMediaControl->Stop();
+//            }
         }
         break;
     case GST_EVENT_FLUSH_STOP:
@@ -3012,8 +3357,16 @@ static gboolean dshowwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent
                 }
             }
 
-            if (decoder->pMediaControl)
-                decoder->pMediaControl->Run();
+            //if (decoder->fragmented)
+            //{
+            //    if (decoder->is_eos_received && decoder->pMediaControl)
+            //        decoder->pMediaControl->Run();
+            //}
+            //else
+            //{
+                if (decoder->pMediaControl)
+                    decoder->pMediaControl->Run();
+//            }
 
             decoder->is_flushing = FALSE;
         }

@@ -89,6 +89,7 @@ struct _GstDShowWrapper
     CCritSec *pDSLock; // Used to lock DirectShow init/deinit
     IFilterGraph *pGraph;
     IMediaControl *pMediaControl;
+    IMediaSeeking *pMediaSeeking;
     CSrc *pSrc;
     IBaseFilter *pISrc;
     CSink *pSink[MAX_OUTPUT_DS_STREAMS];
@@ -152,6 +153,13 @@ struct _GstDShowWrapper
     GstClockTime offset_pts[MAX_OUTPUT_DS_STREAMS];
 
     GstEvent *pending_event;
+
+    gboolean fragmented;
+    gint width;
+    gint height;
+    guint lengthSizeMinusOne;
+    GstBuffer *avc_header;
+    GstClockTime segment_start_pts;
 };
 
 struct _GstDShowWrapperClass

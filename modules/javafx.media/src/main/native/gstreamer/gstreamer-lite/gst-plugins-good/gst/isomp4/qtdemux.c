@@ -14320,6 +14320,9 @@ qtdemux_video_caps (GstQTDemux * qtdemux, QtDemuxStream * stream,
     case FOURCC_dva1:
       _codec ("H.264 / AVC");
       caps = gst_caps_new_simple ("video/x-h264",
+#ifdef GSTREAMER_LITE
+          "fragmented", G_TYPE_BOOLEAN, qtdemux->fragmented,
+#endif // GSTREAMER_LITE
           "stream-format", G_TYPE_STRING, "avc",
           "alignment", G_TYPE_STRING, "au", NULL);
       break;

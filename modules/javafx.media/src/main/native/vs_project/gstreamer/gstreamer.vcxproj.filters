@@ -866,6 +866,9 @@
     <ClInclude Include="..\..\gstreamer\gstreamer-lite\gst-plugins-good\gst\isomp4\qtpalette.h">
       <Filter>gst-plugins-good\gst\isomp4</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\gstreamer\gstreamer-lite\gst-plugins-good\gst\audioparsers\gstmpegaudioparse.h">
+      <Filter>gst-plugins-good\gst\audioparsers</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\gstreamer\gstreamer-lite\gst-plugins-base\gst-libs\gst\video\video-orc.orc">

@@ -523,6 +523,7 @@
     <ClInclude Include="..\..\gstreamer\gstreamer-lite\gst-plugins-base\gst-libs\gst\video\video.h" />
     <ClInclude Include="..\..\gstreamer\gstreamer-lite\gst-plugins-base\gst-libs\gst\video\videoorientation.h" />
     <ClInclude Include="..\..\gstreamer\gstreamer-lite\gst-plugins-base\gst-libs\gst\video\videooverlay.h" />
+    <ClInclude Include="..\..\gstreamer\gstreamer-lite\gst-plugins-good\gst\audioparsers\gstmpegaudioparse.h" />
     <ClInclude Include="..\..\gstreamer\gstreamer-lite\gst-plugins-good\gst\isomp4\descriptors.h" />
     <ClInclude Include="..\..\gstreamer\gstreamer-lite\gst-plugins-good\gst\isomp4\fourcc.h" />
     <ClInclude Include="..\..\gstreamer\gstreamer-lite\gst-plugins-good\gst\isomp4\gstisoff.h" />

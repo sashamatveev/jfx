@@ -670,7 +670,14 @@ next_event:
                         {
                             GstCaps *caps = NULL;
                             GstEvent *caps_event = NULL;
-                            caps = gst_caps_new_simple (element->mimetype, NULL, NULL);
+                            if (strstr(element->mimetype, "audio/aac") != NULL)
+                            {
+                                caps = gst_caps_new_simple("audio/mpeg", "mpegversion", G_TYPE_INT, 4, NULL);
+                            }
+                            else
+                            {
+                                caps = gst_caps_new_simple(element->mimetype, NULL, NULL);
+                            }
                             caps_event = gst_event_new_caps(caps);
                             if (caps_event)
                                 gst_pad_push_event(element->srcpad, caps_event);

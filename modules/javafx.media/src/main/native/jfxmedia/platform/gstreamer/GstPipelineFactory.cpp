@@ -46,6 +46,7 @@
 #define HLS_VALUE_MIMETYPE_MP2T 1
 #define HLS_VALUE_MIMETYPE_MP3  2
 #define HLS_VALUE_MIMETYPE_FMP4 3
+#define HLS_VALUE_MIMETYPE_AAC  4
 
 
 //*************************************************************************************************
@@ -223,6 +224,8 @@ uint32_t CGstPipelineFactory::CreateSourceElement(CLocator* locator, GstElement*
                 g_object_set (javaSource, "mimetype", CONTENT_TYPE_MPA, NULL);
             else if (streamMimeType == HLS_VALUE_MIMETYPE_FMP4)
                 g_object_set (javaSource, "mimetype", CONTENT_TYPE_FMP4, NULL);
+            else if (streamMimeType == HLS_VALUE_MIMETYPE_AAC)
+                g_object_set (javaSource, "mimetype", CONTENT_TYPE_AAC, NULL);
 
             g_object_set (javaSource,
                 "size", (gint64)locator->GetSizeHint(),
@@ -546,6 +549,8 @@ uint32_t CGstPipelineFactory::CreateHLSPipeline(GstElement* source, GstElement* 
         return CreateAVPipeline(source, "dshowwrapper", "dshowwrapper", true, "dshowwrapper", pVideoSink, pOptions, ppPipeline);
     else if (pOptions->GetStreamMimeType() == HLS_VALUE_MIMETYPE_MP3)
         return CreateAudioPipeline(source, "mpegaudioparse", "dshowwrapper", false, pOptions, ppPipeline);
+    else if (pOptions->GetStreamMimeType() == HLS_VALUE_MIMETYPE_AAC)
+        return CreateAudioPipeline(source, NULL, "dshowwrapper", false, pOptions, ppPipeline);
     else if (pOptions->GetStreamMimeType() == HLS_VALUE_MIMETYPE_FMP4)
         // Video decoder is loaded dynamically
         return CreateAVPipeline(source, "qtdemux", "dshowwrapper", true, NULL, pVideoSink, pOptions, ppPipeline);
