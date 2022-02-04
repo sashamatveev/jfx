@@ -565,6 +565,10 @@ uint32_t CGstPipelineFactory::CreateHLSPipeline(GstElement* source, GstElement* 
         return CreateAVPipeline(source, "avmpegtsdemuxer", "avaudiodecoder", false, "avvideodecoder", pVideoSink, pOptions, ppPipeline);
     else if (pOptions->GetStreamMimeType() == HLS_VALUE_MIMETYPE_MP3)
         return CreateAudioPipeline(source, "mpegaudioparse", "avaudiodecoder", false, pOptions, ppPipeline);
+    else if (pOptions->GetStreamMimeType() == HLS_VALUE_MIMETYPE_AAC)
+        return CreateAudioPipeline(source, "aacparse", "avaudiodecoder", false, pOptions, ppPipeline);
+    else if (pOptions->GetStreamMimeType() == HLS_VALUE_MIMETYPE_FMP4)
+        return CreateAVPipeline(source, "qtdemux", "avaudiodecoder", true, "avvideodecoder", pVideoSink, pOptions, ppPipeline);
     else
         return ERROR_PLATFORM_UNSUPPORTED;
 #else
