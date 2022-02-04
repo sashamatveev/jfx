@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -89,7 +89,6 @@ struct _GstDShowWrapper
     CCritSec *pDSLock; // Used to lock DirectShow init/deinit
     IFilterGraph *pGraph;
     IMediaControl *pMediaControl;
-    IMediaSeeking *pMediaSeeking;
     CSrc *pSrc;
     IBaseFilter *pISrc;
     CSink *pSink[MAX_OUTPUT_DS_STREAMS];
@@ -158,8 +157,6 @@ struct _GstDShowWrapper
     gint width;
     gint height;
     guint lengthSizeMinusOne;
-    GstBuffer *avc_header;
-    GstClockTime segment_start_pts;
 };
 
 struct _GstDShowWrapperClass

@@ -366,7 +366,6 @@ HRESULT CSink::CheckMediaType(const CMediaType *pmt)
 
 HRESULT CSink::DoRenderSample(IMediaSample *pMediaSample)
 {
-    g_print("GetActualDataLength() %I64u\n", pMediaSample->GetActualDataLength());
     if (RenderSampleApp != NULL)
         return DoRenderSampleApp(pMediaSample);
     else if (((CInputPin*)m_pInputPin)->m_bUseExternalAllocator)

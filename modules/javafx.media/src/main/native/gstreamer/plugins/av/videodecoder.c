@@ -387,8 +387,6 @@ static gboolean videodecoder_configure(VideoDecoder *decoder, GstCaps *sink_caps
     gint width = 0;
     gint height = 0;
 
-    printf("AMDEBUG videodecoder_configure %d\n", base->is_initialized);
-
     if(gst_caps_get_size(sink_caps) < 1)
         return FALSE;
 
@@ -397,7 +395,6 @@ static gboolean videodecoder_configure(VideoDecoder *decoder, GstCaps *sink_caps
     // Reload decoder if input resolution changed.
     if (gst_structure_get_int(s, "width", &width) && gst_structure_get_int(s, "height", &height))
     {
-        printf("AMDEBUG videodecoder_configure() width %d height %d decoder->width %d decoder->height %d\n", width, height, decoder->width, decoder->height);
         if (decoder->width != 0 && decoder->height != 0 &&
                 (decoder->width != width || decoder->height != height))
         {

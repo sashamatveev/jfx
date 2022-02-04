@@ -64,7 +64,6 @@ public:
     HRESULT InitAllocator(IMemAllocator **ppAlloc);
 
     HRESULT InitMediaType(sInputFormat *pInputFormat);
-    HRESULT UpdateMediaType(sInputFormat *pInputFormat);
     HRESULT DeliverSample(GstBuffer *pBuffer);
     HRESULT SetUserData(sUserData *pUserData);
     HRESULT SetReleaseSampleCallback(void (*function)(GstBuffer *pBuffer, sUserData *pUserData));
@@ -73,7 +72,6 @@ public:
 
 private:
     CMediaType m_mediaType;
-    BOOL       m_bMediaTypeUpdated;
 
     CAllocator *m_pAlloc;
     IMemAllocator *m_pIAlloc;
@@ -89,7 +87,6 @@ public:
     int GetPinCount();
 
     HRESULT InitMediaType(sInputFormat *pInputFormat);
-    HRESULT UpdateMediaType(sInputFormat *pInputFormat);
     HRESULT DeliverSample(GstBuffer *pBuffer);
     HRESULT SetUserData(sUserData *pUserData);
     HRESULT SetReleaseSampleCallback(void (*function)(GstBuffer *pBuffer, sUserData *pUserData));

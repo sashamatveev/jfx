@@ -140,11 +140,7 @@ final class HLSConnectionHolder extends ConnectionHolder {
             return -1;
         }
 
-        long result = (long) (currentPlaylist.seek(position) * HLS_VALUE_FLOAT_MULTIPLIER);
-//        if (isFragmentedMP4()) {
-//            sendHeader = true;/
-//        }
-        return result;
+        return (long) (currentPlaylist.seek(position) * HLS_VALUE_FLOAT_MULTIPLIER);
     }
 
     @Override
@@ -177,17 +173,6 @@ final class HLSConnectionHolder extends ConnectionHolder {
             default:
                 return -1;
         }
-    }
-
-    @Override
-    int getStreamSize() {
-        try {
-            readySignal.await();
-        } catch (InterruptedException e) {
-            return -1;
-        }
-
-        return -1;
     }
 
     private void resetConnection() {
@@ -231,12 +216,10 @@ final class HLSConnectionHolder extends ConnectionHolder {
 
             try {
                 URI uri = new URI(mediaFile);
-                System.out.println("AMDEBUG header: " + uri.toURL().toString());
                 headerConnection = uri.toURL().openConnection();
                 headerChannel = openHeaderChannel();
                 headerLength = headerConnection.getContentLength();
             } catch (IOException | URISyntaxException e) {
-                System.out.println("AMDEBUG e1: " + e.toString());
                 return -1;
             }
             sendHeader = false;
@@ -252,11 +235,9 @@ final class HLSConnectionHolder extends ConnectionHolder {
 
         try {
             URI uri = new URI(mediaFile);
-            System.out.println("AMDEBUG mediaFile: " + uri.toURL().toString());
             urlConnection = uri.toURL().openConnection();
             channel = openChannel();
         } catch (IOException | URISyntaxException e) {
-            System.out.println("AMDEBUG e2: " + e.toString());
             return -1;
         }
 
@@ -277,8 +258,6 @@ final class HLSConnectionHolder extends ConnectionHolder {
 
     private void adjustBitrate(long readTime) {
         int avgBitrate = (int)(((long) urlConnection.getContentLength() * 8 * 1000) / readTime);
-
-        System.out.println("AMDEBUG adjustBitrate() " + avgBitrate);
 
         Playlist playlist = variantPlaylist.getPlaylistBasedOnBitrate(avgBitrate);
         if (playlist != null && playlist != currentPlaylist) {
@@ -959,7 +938,8 @@ final class HLSConnectionHolder extends ConnectionHolder {
                 if (isLive) {
                     if (time == 0) {
                         if (isFragmentedMP4()) {
-                            mediaFileIndex = 0;
+                            mediaFileIndex = 0; // Skip header at 0 index
+                            // we will send it with first segment if needed.
                         } else {
                             mediaFileIndex = -1;
                         }

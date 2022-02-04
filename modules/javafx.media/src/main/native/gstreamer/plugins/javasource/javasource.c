@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -54,7 +54,6 @@ enum
     SIGNAL_COPY_BLOCK,
     SIGNAL_CLOSE_CONNECTION,
     SIGNAL_PROPERTY,
-    SIGNAL_GET_STREAM_SIZE,
     LAST_SIGNAL
 };
 
@@ -285,16 +284,6 @@ static void java_source_class_init (JavaSourceClass *klass)
         G_TYPE_INT, /* return_type */
         2,    /* n_params */
         G_TYPE_INT, G_TYPE_INT);
-
-    klass->signals[SIGNAL_GET_STREAM_SIZE] = g_signal_new ("get-stream-size",
-        G_TYPE_FROM_CLASS (klass),
-        G_SIGNAL_RUN_LAST | G_SIGNAL_NO_RECURSE | G_SIGNAL_NO_HOOKS,
-        0,
-        NULL, /* accumulator */
-        NULL, /* accu_data */
-        source_marshal_INT__VOID,
-        G_TYPE_INT, /* return_type */
-        0    /* n_params */ );
 }
 
 static void java_source_init(JavaSource *element)
@@ -607,7 +596,6 @@ next_event:
                     if (element->update)
                         segment.flags |= GST_SEGMENT_FLAG_UPDATE;
                     segment.rate = element->rate;
-                    //segment.start = 0;
                     segment.start = ((gint64)start_time*GST_SECOND) / HLS_VALUE_FLOAT_MULTIPLIER;
                     segment.stop = result;
                     segment.time = element->position_time;
@@ -670,14 +658,15 @@ next_event:
                         {
                             GstCaps *caps = NULL;
                             GstEvent *caps_event = NULL;
+                            // Special case for HLS AAC elementary stream.
+                            // It has "audio/aac" mimetype which is same as
+                            // "audio/mpeg" mpegversion=4. We changing it here
+                            // so downstream will undestand it.
                             if (strstr(element->mimetype, "audio/aac") != NULL)
-                            {
                                 caps = gst_caps_new_simple("audio/mpeg", "mpegversion", G_TYPE_INT, 4, NULL);
-                            }
                             else
-                            {
                                 caps = gst_caps_new_simple(element->mimetype, NULL, NULL);
-                            }
+
                             caps_event = gst_event_new_caps(caps);
                             if (caps_event)
                                 gst_pad_push_event(element->srcpad, caps_event);

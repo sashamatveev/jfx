@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -210,7 +210,6 @@ uint32_t CGstPipelineFactory::CreateSourceElement(CLocator* locator, GstElement*
             g_signal_connect (javaSource, "seek-data", G_CALLBACK (SourceSeekData), callbacks);
             g_signal_connect (javaSource, "close-connection", G_CALLBACK (SourceCloseConnection), callbacks);
             g_signal_connect (javaSource, "property", G_CALLBACK (SourceProperty), callbacks);
-            g_signal_connect (javaSource, "get-stream-size", G_CALLBACK (SourceGetStreamSize), callbacks);
 
             if (isRandomAccess)
                 g_signal_connect (javaSource, "read-block", G_CALLBACK (SourceReadBlock), callbacks);
@@ -313,11 +312,6 @@ int CGstPipelineFactory::SourceProperty(GstElement *src, int prop, int value, gp
     return ((CStreamCallbacks*)data)->Property(prop, value);
 }
 
-int CGstPipelineFactory::SourceGetStreamSize(GstElement *src, gpointer data)
-{
-    return ((CStreamCallbacks*)data)->GetStreamSize();
-}
-
 void CGstPipelineFactory::SourceCloseConnection(GstElement *src, gpointer data)
 {
     CStreamCallbacks* callbacks = (CStreamCallbacks*)data;
@@ -328,7 +322,6 @@ void CGstPipelineFactory::SourceCloseConnection(GstElement *src, gpointer data)
     g_signal_handlers_disconnect_by_func (src, (void*)G_CALLBACK (SourceSeekData), callbacks);
     g_signal_handlers_disconnect_by_func (src, (void*)G_CALLBACK (SourceCloseConnection), callbacks);
     g_signal_handlers_disconnect_by_func (src, (void*)G_CALLBACK (SourceProperty), callbacks);
-    g_signal_handlers_disconnect_by_func (src, (void*)G_CALLBACK (SourceGetStreamSize), callbacks);
     delete callbacks;
 }
 

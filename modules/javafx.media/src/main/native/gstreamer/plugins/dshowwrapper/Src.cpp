@@ -31,7 +31,6 @@ COutputPin::COutputPin(CCritSec *pLock, CBaseFilter *pFilter, HRESULT *phr) : CB
 {
     m_pAlloc = NULL;
     m_pIAlloc = NULL;
-    m_bMediaTypeUpdated = FALSE;
 }
 
 COutputPin::~COutputPin()
@@ -129,20 +128,6 @@ HRESULT COutputPin::InitMediaType(sInputFormat *pInputFormat)
     return S_OK;
 }
 
-HRESULT COutputPin::UpdateMediaType(sInputFormat *pInputFormat)
-{
-    HRESULT hr = InitMediaType(pInputFormat);
-
-    if (SUCCEEDED(hr) && m_Connected && m_pInputPin)
-    {
-        hr = m_Connected->ReceiveConnection(this, &m_mediaType);
-        if (SUCCEEDED(hr))
-            hr = m_pInputPin->NotifyAllocator(m_pIAlloc, TRUE);
-    }
-
-    return S_OK;
-}
-
 HRESULT COutputPin::DeliverSample(GstBuffer *pBuffer)
 {
     HRESULT hr = S_OK;
@@ -187,12 +172,6 @@ HRESULT COutputPin::DeliverSample(GstBuffer *pBuffer)
 
     if (GST_BUFFER_IS_DISCONT(pBuffer))
         pSample->SetDiscontinuity(TRUE);
-
-    //if (m_bMediaTypeUpdated)
-    //{
-    //    hr = pSample->SetMediaType(&m_mediaType);
-    //    m_bMediaTypeUpdated = FALSE;
-    //}
 
     hr = Deliver(pSample);
     pSample->Release();
@@ -313,15 +292,6 @@ HRESULT CSrc::InitMediaType(sInputFormat *pInputFormat)
     else
         return E_FAIL;
 }
-
-HRESULT CSrc::UpdateMediaType(sInputFormat *pInputFormat)
-{
-    if (m_pPin != NULL)
-        return m_pPin->UpdateMediaType(pInputFormat);
-    else
-        return E_FAIL;
-}
-
 
 HRESULT CSrc::DeliverSample(GstBuffer *pBuffer)
 {

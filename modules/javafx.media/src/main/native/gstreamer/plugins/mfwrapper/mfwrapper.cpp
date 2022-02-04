@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2021, 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -723,7 +723,7 @@ static GstFlowReturn mfwrapper_deliver_sample(GstMFWrapper *decoder, IMFSample *
         }
 
         if (SUCCEEDED(hr) && decoder->force_output_discontinuity)
-        {            
+        {
             pGstBuffer = gst_buffer_make_writable(pGstBuffer);
             GST_BUFFER_FLAG_SET(pGstBuffer, GST_BUFFER_FLAG_DISCONT);
             decoder->force_output_discontinuity = FALSE;
@@ -1195,32 +1195,6 @@ static HRESULT mfwrapper_set_output_media_type(GstMFWrapper *decoder, GstCaps *c
     return hr;
 }
 
-//static HRESULT mfwrapper_drain_decoder(GstMFWrapper *decoder)
-//{
-//    MFT_OUTPUT_DATA_BUFFER outputDataBuffer;
-//    outputDataBuffer.dwStreamID = 0;
-//    outputDataBuffer.pSample = decoder->pDecoderOutput;
-//    outputDataBuffer.dwStatus = 0;
-//    outputDataBuffer.pEvents = NULL;
-//    DWORD dwStatus = 0;
-//
-//    if (!decoder->pDecoder)
-//        return E_FAIL;
-//
-//    HRESULT hr = decoder->pDecoder->ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, NULL);
-//    do
-//    {
-//        if (SUCCEEDED(hr))
-//            hr = decoder->pDecoder->ProcessOutput(0, 1, &outputDataBuffer, &dwStatus);
-//        SafeRelease(&outputDataBuffer.pEvents);
-//    } while (SUCCEEDED(hr));
-//
-//    if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT)
-//        hr = S_OK;
-//
-//    return hr;
-//}
-
 static gboolean mfwrapper_init_mf(GstMFWrapper *decoder, GstCaps *caps)
 {
     HRESULT hr = S_OK;
@@ -1270,7 +1244,7 @@ static gboolean mfwrapper_init_mf(GstMFWrapper *decoder, GstCaps *caps)
             // Free old one if exist
             if (decoder->header)
                 delete[] decoder->header;
-            
+
             decoder->header = new BYTE[info.size * 2]; // Should be enough, since we will only add several 4 bytes start codes to 3 nal units
             if (decoder->header == NULL)
             {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -75,8 +75,6 @@ struct _HLSProgressBuffer
     GstFlowReturn srcresult;
 
     GstClockTime  buffer_pts;
-
-    guint64       segment_start;
 };
 
 struct _HLSProgressBufferClass
@@ -208,8 +206,6 @@ static void hls_progress_buffer_init(HLSProgressBuffer *element)
     element->srcresult = GST_FLOW_OK;
 
     element->buffer_pts = GST_CLOCK_TIME_NONE;
-
-    element->segment_start = 0;
 }
 
 /**
@@ -310,8 +306,6 @@ static void hls_progress_buffer_flush_data(HLSProgressBuffer *element)
             element->cache_write_ready[i] = TRUE;
         }
     }
-
-    element->segment_start = 0;
 
     g_mutex_unlock(&element->lock);
 }
@@ -522,45 +516,8 @@ static gboolean hls_progress_buffer_sink_event(GstPad *pad, GstObject *parent, G
             gst_event_unref(event);
             ret = TRUE;
 
-//            if (segment.stop - segment.start <= 0)
-//            {
-//                gst_element_message_full(GST_ELEMENT(element), GST_MESSAGE_ERROR, GST_STREAM_ERROR, GST_STREAM_ERROR_WRONG_TYPE, g_strdup("Only limited content is supported by hlsprogressbuffer."), NULL, ("hlsprogressbuffer.c"), ("hls_progress_buffer_sink_event"), 0);
-//                return TRUE;
-//            }
-
             if (element->send_new_segment)
             {
-                //if (element->hls_format == HLS_FORMAT_FMP4)
-                //{
-                //    GstSegment new_segment;
-                //    gst_segment_init(&new_segment, GST_FORMAT_BYTES);
-                //    new_segment.flags = segment.flags;
-                //    new_segment.rate = segment.rate;
-                //    new_segment.start = element->bytes_processed;
-                //    new_segment.stop = -1;
-                //    new_segment.position = element->bytes_processed;
-                //    new_segment.time = element->bytes_processed;
-
-                //    element->buffer_pts = segment.position;
-                //    element->bytes_processed += segment.stop;
-
-                //    event = gst_event_new_segment(&new_segment);
-                //    element->send_new_segment = TRUE;
-                //    ret = gst_pad_push_event(element->srcpad, event);
-                //}
-                //else
-                //{
-                // 10,000,000,000
-                // Works
-                //GstSegment new_segment;
-                //gst_segment_init(&new_segment, GST_FORMAT_TIME);
-                //new_segment.flags = segment.flags;
-                //new_segment.rate = segment.rate;
-                //new_segment.start = 10000000000;
-                //new_segment.stop = -1;
-                //new_segment.position = 0;
-                //new_segment.time = 0;
-
                 GstSegment new_segment;
                 gst_segment_init(&new_segment, GST_FORMAT_TIME);
                 new_segment.flags = segment.flags;
@@ -570,24 +527,13 @@ static gboolean hls_progress_buffer_sink_event(GstPad *pad, GstObject *parent, G
                 new_segment.position = segment.position;
                 new_segment.time = segment.time;
 
-                    //GstSegment new_segment;
-                    //gst_segment_init(&new_segment, GST_FORMAT_TIME);
-                    //new_segment.flags = segment.flags;
-                    //new_segment.rate = segment.rate;
-                    //new_segment.start = segment.position;
-                    //new_segment.stop = -1;
-                    //new_segment.position = segment.position;
-                    //new_segment.time = segment.position;
+                element->buffer_pts = segment.position;
 
-                  element->buffer_pts = segment.position;
-                  //element->segment_start = segment.start;
-
-                  event = gst_event_new_segment(&new_segment);
-                  if (segment.start != 0) // If start is 0, then it is header segment and we                     
-                    element->send_new_segment = FALSE;
-                  ret = gst_pad_push_event(element->srcpad, event);
-                //}
-            }
+                event = gst_event_new_segment(&new_segment);
+                if (segment.start != 0) // If start is 0, then it is header segment and we
+                  element->send_new_segment = FALSE;
+                ret = gst_pad_push_event(element->srcpad, event);
+             }
 
             // Get and prepare next write segment
             g_mutex_lock(&element->lock);
