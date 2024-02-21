@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2023, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -52,12 +52,12 @@ using namespace std;
 
 // Debug
 #define MP2T_PTS_DEBUG 0
-#define H264_PTS_DEBUG 0
+#define H264_PTS_DEBUG 1
 #define AAC_PTS_DEBUG 0
 #define MP2T_PTS_INPUT_DEBUG 0
-#define H264_PTS_INPUT_DEBUG 0
+#define H264_PTS_INPUT_DEBUG 1
 #define AAC_PTS_INPUT_DEBUG 0
-#define EOS_DEBUG 0
+#define EOS_DEBUG 1
 
 #define MAX_HEADER_SIZE 256
 #define INPUT_BUFFERS_BEFORE_ERROR 500
@@ -364,6 +364,10 @@ static void gst_dshowwrapper_init (GstDShowWrapper *decoder)
     decoder->width = 0;
     decoder->height = 0;
     decoder->lengthSizeMinusOne = 0;
+
+    decoder->use_start_code = FALSE;
+    decoder->codec_data = NULL;
+    decoder->send_codec_data = FALSE;
 }
 
 static void gst_dshowwrapper_dispose(GObject* object)
@@ -407,6 +411,13 @@ static void gst_dshowwrapper_dispose(GObject* object)
             gst_event_unref (decoder->caps_event[i]);
             decoder->caps_event[i] = NULL;
         }
+    }
+
+    if (decoder->codec_data != NULL)
+    {
+        // INLINE - gst_buffer_unref()
+        gst_buffer_unref (decoder->codec_data);
+        decoder->codec_data = NULL;
     }
 
     G_OBJECT_CLASS(parent_class)->dispose(object);
@@ -1197,7 +1208,7 @@ static void dshowwrapper_destroy_graph (GstDShowWrapper *decoder)
         CoUninitialize();
 }
 
-gsize dshowwrapper_get_avc_config(void *in, gsize in_size, BYTE *out, gsize out_size, guint *lengthSizeMinusOne)
+gsize dshowwrapper_get_avc_config(void *in, gsize in_size, BYTE *out, gsize out_size, guint *lengthSizeMinusOne, gboolean add_start_code)
 {
     guintptr bdata = (guintptr)in;
     AVCCHeader *header = NULL;
@@ -1206,6 +1217,7 @@ gsize dshowwrapper_get_avc_config(void *in, gsize in_size, BYTE *out, gsize out_
     guint ii = 0;
     gsize in_bytes_count = 0;
     gsize out_bytes_count = 0;
+    guint8 startCode[4] = { 0x00, 0x00, 0x00, 0x01 };
 
     if (in_size < sizeof(AVCCHeader))
         return 0;
@@ -1215,7 +1227,8 @@ gsize dshowwrapper_get_avc_config(void *in, gsize in_size, BYTE *out, gsize out_
     header->lengthSizeMinusOne &= 0x03;
     header->spsCount &= 0x1F;
 
-    *lengthSizeMinusOne = header->lengthSizeMinusOne;
+    if (lengthSizeMinusOne != NULL)
+        *lengthSizeMinusOne = header->lengthSizeMinusOne;
 
     bdata += sizeof(AVCCHeader); // length of first SPS struct, if any
     in_bytes_count += sizeof(AVCCHeader);
@@ -1227,7 +1240,19 @@ gsize dshowwrapper_get_avc_config(void *in, gsize in_size, BYTE *out, gsize out_
 
         nalUnitLength = ((guint16)*(guint8*)bdata) << 8;
         nalUnitLength |= (guint16)*(guint8*)(bdata + 1);
-        nalUnitLength += 2; // Copy nalUnitLength
+        if (add_start_code)
+        {
+            if ((out_bytes_count + sizeof(startCode)) > out_size)
+                return 0;
+
+            memcpy(out, &startCode[0], sizeof(startCode));
+            out += sizeof(startCode); out_bytes_count += sizeof(startCode);
+            bdata += 2; in_bytes_count += 2; // Do not copy NAL unit length
+        }
+        else
+        {
+            nalUnitLength += 2; // Copy nalUnitLength
+        }
 
         if ((out_bytes_count + nalUnitLength) > out_size)
             return 0;
@@ -1256,9 +1281,21 @@ gsize dshowwrapper_get_avc_config(void *in, gsize in_size, BYTE *out, gsize out_
 
         nalUnitLength = ((guint16)*(guint8*)bdata) << 8;
         nalUnitLength |= (guint16)*(guint8*)(bdata + 1);
-        nalUnitLength += 2; // Copy nalUnitLength
+        if (add_start_code)
+        {
+            if ((out_bytes_count + sizeof(startCode)) > out_size)
+                return 0;
 
-       if ((out_bytes_count + nalUnitLength) > out_size)
+            memcpy(out, &startCode[0], sizeof(startCode));
+            out += sizeof(startCode); out_bytes_count += sizeof(startCode);
+            bdata += 2; in_bytes_count += 2; // Do not copy NAL unit length
+        }
+        else
+        {
+            nalUnitLength += 2; // Copy nalUnitLength
+        }
+
+        if ((out_bytes_count + nalUnitLength) > out_size)
             return 0;
 
         if ((in_bytes_count + nalUnitLength) > in_size)
@@ -1990,6 +2027,24 @@ static gboolean dshowwrapper_reload_decoder_h264_fragmented(GstDShowWrapper *dec
     return TRUE;
 }
 
+static gboolean dshowwrapper_use_start_code(gint width, gint height)
+{
+    if (width != 0 && height != 0)
+    {
+        // Only enable it for Windows 11. See JDK-8305842.
+        OSVERSIONINFO osvi;
+        ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
+        osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+        GetVersionEx(&osvi);
+        // On Windows 10 and 11 dwMajorVersion will be 10 and dwMinorVersion will be 0,
+        // so we will be using dwBuildNumber to figure out if we on Windows 11.
+        if (osvi.dwBuildNumber >= 22000)
+            return TRUE;
+    }
+
+    return FALSE;
+}
+
 static gboolean dshowwrapper_load_decoder_h264(GstStructure *s, GstDShowWrapper *decoder)
 {
     gboolean ret = FALSE;
@@ -2037,7 +2092,18 @@ static gboolean dshowwrapper_load_decoder_h264(GstStructure *s, GstDShowWrapper 
             return TRUE;
     }
 
-    if (width != 0 && height != 0)
+    decoder->use_start_code = dshowwrapper_use_start_code(width, height);
+    g_print("AMDEBUG decoder->use_start_code %d\n", decoder->use_start_code);
+
+    // Save codec data if use_start_code is true. We will need to send it in chain()
+    // with first buffer and after seek.
+    if (decoder->use_start_code && codec_data)
+    {
+        decoder->codec_data = gst_buffer_ref(codec_data);
+        decoder->send_codec_data = TRUE;
+    }
+
+    if (width != 0 && height != 0 && !decoder->use_start_code)
     {
         // Load AVC1 decoder
         dshowwrapper_load_decoder_h264(decoder, JFX_CODEC_ID_AVC1);
@@ -2050,7 +2116,7 @@ static gboolean dshowwrapper_load_decoder_h264(GstStructure *s, GstDShowWrapper 
             if (gst_buffer_map(codec_data, &codec_data_info, GST_MAP_READ))
             {
                 if (codec_data_info.size <= MAX_HEADER_SIZE)
-                    header_size = dshowwrapper_get_avc_config(codec_data_info.data, codec_data_info.size, header, MAX_HEADER_SIZE, &decoder->lengthSizeMinusOne);
+                    header_size = dshowwrapper_get_avc_config(codec_data_info.data, codec_data_info.size, header, MAX_HEADER_SIZE, &decoder->lengthSizeMinusOne, FALSE);
                 gst_buffer_unmap(codec_data, &codec_data_info);
             }
         }
@@ -2864,6 +2930,112 @@ static GstClockTime dshowwrapper_clock_get_time(GstClock *clock, gpointer user_d
 }
 #endif // ENABLE_CLOCK
 
+static void dshowwrapper_nalu_to_start_code(BYTE *pbBuffer, gsize size)
+{
+    gsize leftSize = size;
+
+    if (pbBuffer == NULL || size < 4)
+        return;
+
+    do
+    {
+        gsize naluLen = ((guint)*(guint8*)pbBuffer) << 24;
+        naluLen |= ((guint)*(guint8*)(pbBuffer + 1)) << 16;
+        naluLen |= ((guint)*(guint8*)(pbBuffer + 2)) << 8;
+        naluLen |= ((guint)*(guint8*)(pbBuffer + 3));
+
+        if (naluLen <= 1) // Start code or something wrong
+            return;
+
+        pbBuffer[0] = 0x00;
+        pbBuffer[1] = 0x00;
+        pbBuffer[2] = 0x00;
+        pbBuffer[3] = 0x01;
+
+        if (leftSize >= (naluLen + 4)) {
+            leftSize -= (naluLen + 4);
+            pbBuffer += (naluLen + 4);
+        } else {
+            return; // Something wrong
+        }
+
+    } while (leftSize > 0);
+}
+
+// Should be called only if use_start_code is set
+static GstBuffer* dshowwrapper_chain_use_start_code (GstDShowWrapper *decoder, GstBuffer *in_buf)
+{
+    GstMapInfo info;
+    BYTE header[MAX_HEADER_SIZE];
+    guint header_size = 0;
+    GstBuffer* out_buf = NULL;
+
+    if (in_buf == NULL)
+        return NULL;
+
+    if (decoder == NULL || !decoder->use_start_code)
+    {
+        // INLINE - gst_buffer_unref()
+        gst_buffer_unref (in_buf);
+        return NULL;
+    }
+
+    if (decoder->send_codec_data && decoder->codec_data != NULL)
+    {
+        if (gst_buffer_get_size(decoder->codec_data) <= MAX_HEADER_SIZE)
+        {
+            if (gst_buffer_map(decoder->codec_data, &info, GST_MAP_READ))
+            {
+                if (info.size <= MAX_HEADER_SIZE)
+                    header_size = dshowwrapper_get_avc_config(info.data, info.size, header, MAX_HEADER_SIZE, NULL, TRUE);
+                gst_buffer_unmap(decoder->codec_data, &info);
+
+                if (header_size > 0)
+                    out_buf = gst_buffer_new_memdup(header, header_size);
+            }
+        }
+
+        decoder->send_codec_data = FALSE;
+
+        if (out_buf == NULL)
+        {
+            // INLINE - gst_buffer_unref()
+            gst_buffer_unref (in_buf);
+            return NULL;
+        }
+    }
+
+    if (out_buf != NULL)
+    {
+        // We have header, so add in_buf to out_buf.
+        // gst_buffer_append() returns first buffer with
+        // added data from in_buf. Can return NULL.
+        out_buf = gst_buffer_append(out_buf, in_buf);
+    }
+    else
+    {
+        out_buf = in_buf;
+    }
+
+    if (out_buf != NULL)
+    {
+        if (!gst_buffer_map(out_buf, &info, GST_MAP_WRITE))
+        {
+            // INLINE - gst_buffer_unref()
+            gst_buffer_unref (out_buf);
+            return NULL;
+        }
+
+        // Skip header, since it is already uses start code.
+        if (info.size > header_size)
+            dshowwrapper_nalu_to_start_code((BYTE*)(info.data + header_size), info.size - header_size);
+
+        gst_buffer_unmap(out_buf, &info);
+    }
+
+    return out_buf;
+}
+
 // Processes input buffers
 static GstFlowReturn dshowwrapper_chain (GstPad * pad, GstObject *parent, GstBuffer * buf)
 {
@@ -2956,6 +3128,16 @@ static GstFlowReturn dshowwrapper_chain (GstPad * pad, GstObject *parent, GstBuf
         buf = gst_buffer_make_writable(buf);
         GST_BUFFER_FLAG_SET(buf, GST_BUFFER_FLAG_DISCONT);
         decoder->force_discontinuity = FALSE;
+    }
+
+    if (decoder->use_start_code)
+    {
+        // dshowwrapper_chain_use_start_code() returns same buffer converted
+        // to start codecs or new one with added header. It will unref
+        // old buffer if no longer needed.
+        buf = dshowwrapper_chain_use_start_code(decoder, buf);
+        if (buf == NULL)
+            return GST_FLOW_ERROR;
     }
 
     if (decoder->pSrc)
@@ -3078,6 +3260,9 @@ static gboolean dshowwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent
                     decoder->out_buffer[i] = NULL;
                 }
             }
+
+            if (decoder->use_start_code)
+                decoder->send_codec_data = TRUE;
 
             if (decoder->pMediaControl)
                 decoder->pMediaControl->Run();
