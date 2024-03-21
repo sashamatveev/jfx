@@ -57,7 +57,7 @@ public class RectangleTest extends VisualTestBase {
         waitFirstFrame();
         runAndWait(() -> {
             Color color = getColor(testScene, WIDTH / 2, HEIGHT / 2);
-            assertColorEquals(Color.WHITE, color, TOLERANCE);
+            assertColorEquals(Color.ORANGE, color, TOLERANCE);
         });
     }
 
