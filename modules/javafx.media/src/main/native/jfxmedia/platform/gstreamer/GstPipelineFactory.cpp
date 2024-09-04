@@ -262,6 +262,10 @@ uint32_t CGstPipelineFactory::CreateSourceElement(CLocator *locator, CStreamCall
         g_object_set(javaSource, "mimetype", CONTENT_TYPE_FMP4, NULL);
     else if (streamMimeType == HLS_VALUE_MIMETYPE_AAC)
         g_object_set(javaSource, "mimetype", CONTENT_TYPE_AAC, NULL);
+    else
+        // AMTODO We need to retest mimetypes, since they only were used for HLS
+        // without it javasource does not send caps event.
+        g_object_set (javaSource, "mimetype", locator->GetContentType().c_str(), NULL);
 
     g_object_set(javaSource,
                  "size", (gint64)locator->GetSizeHint(),
@@ -508,7 +512,8 @@ uint32_t CGstPipelineFactory::CreateMP4Pipeline(GstElement* pVideoSink,
 #if TARGET_OS_WIN32
     // We need to load dshowwrapper (H.264) or mfwrapper (H.265), but we do not know which one based on .mp4
     // extension, so intead we will load video decoder dynamically when qtdemux will signal video pad added.
-    pOptions->SetStreamParser("qtdemux")->SetAudioDecoder("dshowwrapper");
+    pOptions->SetStreamParser("mfdemux")->SetAudioDecoder("dshowwrapper");
+    //pOptions->SetStreamParser("qtdemux")->SetAudioDecoder("dshowwrapper");
     return CreateAVPipeline(true, pVideoSink, pOptions, pElements, ppPipeline);
 #elif TARGET_OS_MAC
     return ERROR_PLATFORM_UNSUPPORTED;

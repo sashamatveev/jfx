@@ -664,6 +664,11 @@ static GstFlowReturn progress_buffer_enqueue_item(ProgressBuffer *element, GstMi
                 signal = send_position_message(element, TRUE);
                 break;
             }
+            case GST_EVENT_CAPS:
+            {
+                gst_pad_push_event(element->srcpad, event);
+                break;
+            }
 
             default:
                 gst_event_unref(event); // INLINE - gst_event_unref()
@@ -949,6 +954,12 @@ static gboolean progress_buffer_sink_event(GstPad *pad, GstObject *parent, GstEv
     ProgressBuffer *element = PROGRESS_BUFFER(parent);
     gboolean       result = TRUE;
 
+    // TODO Do we really need dynamic pad in progressbuffer?
+    // Create src pad if it does not exist. Since javasource will send caps event before
+    // data we need to create src pad.
+    if (!element->srcpad)
+        progress_buffer_create_sourcepad(element);
+
     // Ignore GST_EVENT_FLUSH_START and GST_EVENT_FLUSH_STOP if source seeking
     if (element->is_source_seeking)
     {
@@ -979,7 +990,6 @@ static gboolean progress_buffer_sink_event(GstPad *pad, GstObject *parent, GstEv
         result = gst_pad_push_event(element->srcpad, event);
 
     return result;
-
 }
 
 static gboolean progress_buffer_src_event(GstPad *pad, GstObject *parent, GstEvent *event)

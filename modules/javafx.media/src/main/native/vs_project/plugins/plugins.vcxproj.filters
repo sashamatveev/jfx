@@ -46,6 +46,12 @@
     <ClCompile Include="..\..\gstreamer\plugins\mfwrapper\mfwrapper.cpp">
       <Filter>mfwrapper</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\gstreamer\plugins\mfwrapper\mfdemux.cpp">
+      <Filter>mfwrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\gstreamer\plugins\mfwrapper\gstmfbytestream.cpp">
+      <Filter>mfwrapper</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\gstreamer\plugins\mfwrapper\mfwrapper.h">
@@ -64,6 +70,12 @@
       <Filter>dshowwrapper</Filter>
     </ClInclude>
     <ClInclude Include="..\..\gstreamer\plugins\fxplugins_common.h" />
+    <ClInclude Include="..\..\gstreamer\plugins\mfwrapper\mfdemux.h">
+      <Filter>mfwrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\gstreamer\plugins\mfwrapper\gstmfbytestream.h">
+      <Filter>mfwrapper</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\gstreamer\plugins\progressbuffer\cache.h">
