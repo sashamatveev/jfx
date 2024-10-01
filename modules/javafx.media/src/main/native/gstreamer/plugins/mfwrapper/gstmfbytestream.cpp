@@ -1,16 +1,51 @@
 #include "gstmfbytestream.h"
 
-CGSTMFByteStream::CGSTMFByteStream(QWORD qwLength)
+template <class T> void SafeRelease(T **ppT)
+{
+    if (*ppT)
+    {
+        (*ppT)->Release();
+        *ppT = NULL;
+    }
+}
+
+CGSTMFByteStream::CGSTMFByteStream(QWORD qwLength, GstPad *pSinkPad)
 {
     m_ulRefCount = 0;
     m_qwPosition = 0;
     m_qwLength = qwLength;
+
+    m_pBytes = NULL;
+    m_cbBytes = 0;
+    m_pCallback = NULL;
+    m_pAsyncResult = NULL;
+
+    m_pSinkPad = pSinkPad;
+}
+
+HRESULT CGSTMFByteStream::ReadRangeAvailable()
+{
+    return ReadData();
 }
 
 // IMFByteStream
 HRESULT CGSTMFByteStream::BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback, IUnknown *punkState)
 {
-    return E_FAIL;
+    if (pb == NULL || pCallback == NULL)
+        return E_POINTER;
+
+    if (m_pSinkPad == NULL)
+        return E_POINTER;
+
+    m_pBytes = pb;
+    m_cbBytes = (cb < m_qwLength) ? cb : m_qwLength;
+    m_pCallback = pCallback;
+
+    HRESULT hr = MFCreateAsyncResult(NULL, pCallback, punkState, &m_pAsyncResult);
+    if (FAILED(hr))
+        return hr;
+
+    return ReadData();
 }
 
 HRESULT CGSTMFByteStream::BeginWrite(const BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback, IUnknown *punkState)
@@ -25,7 +60,11 @@ HRESULT CGSTMFByteStream::Close()
 
 HRESULT CGSTMFByteStream::EndRead(IMFAsyncResult *pResult, ULONG *pcbRead)
 {
-    return E_FAIL;
+    SafeRelease(&m_pAsyncResult);
+
+    *pcbRead = m_cbBytes;
+
+    return S_OK;
 }
 
 HRESULT CGSTMFByteStream::EndWrite(IMFAsyncResult *pResult, ULONG *pcbWritten)
@@ -61,7 +100,12 @@ HRESULT CGSTMFByteStream::GetLength(QWORD *pqwLength)
 
 HRESULT CGSTMFByteStream::IsEndOfStream(BOOL *pfEndOfStream)
 {
-    return E_FAIL;
+    if (m_qwPosition >= m_qwLength)
+        *pfEndOfStream = TRUE;
+    else
+        *pfEndOfStream = FALSE;
+
+    return S_OK;
 }
 
 HRESULT CGSTMFByteStream::Read(BYTE *pb, ULONG cb, ULONG *pcbRead)
@@ -71,7 +115,31 @@ HRESULT CGSTMFByteStream::Read(BYTE *pb, ULONG cb, ULONG *pcbRead)
 
 HRESULT CGSTMFByteStream::Seek(MFBYTESTREAM_SEEK_ORIGIN SeekOrigin, LONGLONG llSeekOffset, DWORD dwSeekFlags, QWORD *pqwCurrentPosition)
 {
-    return E_FAIL;
+    HRESULT hr = S_OK;
+
+    if (pqwCurrentPosition == NULL)
+        return E_POINTER;
+
+    QWORD qwSeekPosition = 0;
+    switch (SeekOrigin)
+    {
+        case msoBegin:
+            qwSeekPosition = llSeekOffset;
+            break;
+        case msoCurrent:
+            qwSeekPosition = m_qwPosition + llSeekOffset;
+            break;
+        default:
+            return E_FAIL;
+    }
+
+    hr = SetCurrentPosition(qwSeekPosition);
+    if (FAILED(hr))
+        return hr;
+
+    *pqwCurrentPosition = m_qwPosition;
+
+    return S_OK;
 }
 
 HRESULT CGSTMFByteStream::SetCurrentPosition(QWORD qwPosition)
@@ -82,9 +150,7 @@ HRESULT CGSTMFByteStream::SetCurrentPosition(QWORD qwPosition)
     if (m_qwPosition == qwPosition)
         return S_OK;
 
-    // TODO: do seek
-
-    m_qwPosition == qwPosition;
+    m_qwPosition = qwPosition;
 
     return S_OK;
 }
@@ -136,4 +202,45 @@ ULONG CGSTMFByteStream::Release()
         delete this;
     }
     return uCount;
+}
+
+HRESULT CGSTMFByteStream::ReadData()
+{
+    GstFlowReturn ret = GST_FLOW_ERROR;
+    GstBuffer *buf = NULL;
+    guint64 offset = (guint64)m_qwPosition;
+    guint size = (guint)m_cbBytes;
+
+    // Read data from upstream
+    ret = gst_pad_pull_range(m_pSinkPad, offset, size, &buf);
+    if (ret == GST_FLOW_FLUSHING)
+    {
+        // Wait for FX_EVENT_RANGE_READY. It will be send when data available.
+        return S_OK;
+    }
+    else if (ret == GST_FLOW_OK)
+    {
+        GstMapInfo info;
+        if (!gst_buffer_map(buf, &info, GST_MAP_READ))
+        {
+            // INLINE - gst_buffer_unref()
+            gst_buffer_unref(buf);
+            return E_FAIL;
+        }
+
+        memcpy(m_pBytes, info.data, m_cbBytes);
+
+        gst_buffer_unmap(buf, &info);
+
+        // INLINE - gst_buffer_unref()
+        gst_buffer_unref(buf);
+
+        m_qwPosition += m_cbBytes;
+
+        HRESULT hr = m_pCallback->Invoke(m_pAsyncResult);
+
+        return S_OK;
+    }
+
+    return E_FAIL;
 }

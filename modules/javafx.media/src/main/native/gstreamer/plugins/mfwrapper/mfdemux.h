@@ -36,6 +36,20 @@
 
 #include <gstmfbytestream.h>
 
+#include "fxplugins_common.h"
+
+typedef struct {
+    JFX_CODEC_ID codecID;
+    UINT32 uiChannels;
+    UINT32 uiRate;
+    GstBuffer *codec_data;
+} AudioFormat;
+
+typedef struct {
+    JFX_CODEC_ID codecID;
+    GstBuffer *codec_data;
+} VideoFormat;
+
 G_BEGIN_DECLS
 
 #define GST_TYPE_MFDEMUX \
@@ -56,7 +70,7 @@ struct _GstMFDemux
 {
     GstElement element;
 
-    GstPad *sinkpad;         // input pad
+    GstPad *sink_pad;         // input pad
 
     HRESULT hr_mfstartup;
 
@@ -69,6 +83,10 @@ struct _GstMFDemux
     CGSTMFByteStream *pGSTMFByteStream;
     IMFByteStream *pIMFByteStream;
     IMFSourceReader *pSourceReader;
+
+    AudioFormat audioFormat;
+
+    GstPad *audio_src_pad;
 };
 
 struct _GstMFDemuxClass

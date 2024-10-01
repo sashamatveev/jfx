@@ -9,7 +9,9 @@
 class CGSTMFByteStream : public IMFByteStream
 {
 public:
-    CGSTMFByteStream(QWORD qwLength);
+    CGSTMFByteStream(QWORD qwLength, GstPad *pSinkPad);
+
+    HRESULT ReadRangeAvailable();
 
     // IMFByteStream
     HRESULT BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback, IUnknown *punkState);
@@ -34,10 +36,21 @@ public:
     ULONG Release();
 
 private:
+    HRESULT ReadData();
+
+private:
     ULONG m_ulRefCount;
 
     QWORD m_qwPosition;
     QWORD m_qwLength;
+
+    // Read
+    BYTE *m_pBytes;
+    ULONG m_cbBytes;
+    IMFAsyncCallback *m_pCallback;
+    IMFAsyncResult   *m_pAsyncResult;
+
+    GstPad *m_pSinkPad;
 };
 
 #endif // __GST_MF_BYTESTREAM_H__

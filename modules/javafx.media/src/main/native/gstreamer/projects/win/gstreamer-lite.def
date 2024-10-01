@@ -146,3 +146,7 @@ gst_structure_set	@144	NONAME
 gst_util_group_id_next	@145	NONAME
 gst_value_list_get_value	@146	NONAME
 gst_bin_recalculate_latency	@148	NONAME
+gst_query_new_scheduling	@149	NONAME
+gst_query_has_scheduling_mode_with_flags	@150	NONAME
+gst_pad_peer_query	@151	NONAME
+gst_pad_pull_range	@152	NONAME
