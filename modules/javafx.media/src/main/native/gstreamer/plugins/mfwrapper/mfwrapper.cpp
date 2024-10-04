@@ -279,7 +279,7 @@ static gboolean mfwrapper_is_decoder_by_codec_id_supported(GstMFWrapper *decoder
 
     switch (codec_id)
     {
-    case JFX_CODEC_ID_H265:
+    case JFX_CODEC_ID_HEVC:
         // Dummy caps to load H.265 decoder
         GstCaps *caps = gst_caps_new_simple("video/x-h265",
             "width", G_TYPE_INT, 1920,
@@ -427,33 +427,33 @@ static void mfwrapper_print_output_media_formats(IMFTransform *pMFTrasnform, con
 }
 #endif // MEDIA_FORMAT_DEBUG
 
-static void mfwrapper_nalu_to_start_code(BYTE *pbBuffer, gsize size)
-{
-    gint leftSize = size;
-
-    if (pbBuffer == NULL || size < 4)
-        return;
-
-    do
-    {
-        guint naluLen = ((guint)*(guint8*)pbBuffer) << 24;
-        naluLen |= ((guint)*(guint8*)(pbBuffer + 1)) << 16;
-        naluLen |= ((guint)*(guint8*)(pbBuffer + 2)) << 8;
-        naluLen |= ((guint)*(guint8*)(pbBuffer + 3));
-
-        if (naluLen <= 1) // Start code or something wrong
-            return;
-
-        pbBuffer[0] = 0x00;
-        pbBuffer[1] = 0x00;
-        pbBuffer[2] = 0x00;
-        pbBuffer[3] = 0x01;
-
-        leftSize -= (naluLen + 4);
-        pbBuffer += (naluLen + 4);
-
-    } while (leftSize > 0);
-}
+//static void mfwrapper_nalu_to_start_code(BYTE *pbBuffer, gsize size)
+//{
+//    gint leftSize = size;
+//
+//    if (pbBuffer == NULL || size < 4)
+//        return;
+//
+//    do
+//    {
+//        guint naluLen = ((guint)*(guint8*)pbBuffer) << 24;
+//        naluLen |= ((guint)*(guint8*)(pbBuffer + 1)) << 16;
+//        naluLen |= ((guint)*(guint8*)(pbBuffer + 2)) << 8;
+//        naluLen |= ((guint)*(guint8*)(pbBuffer + 3));
+//
+//        if (naluLen <= 1) // Start code or something wrong
+//            return;
+//
+//        pbBuffer[0] = 0x00;
+//        pbBuffer[1] = 0x00;
+//        pbBuffer[2] = 0x00;
+//        pbBuffer[3] = 0x01;
+//
+//        leftSize -= (naluLen + 4);
+//        pbBuffer += (naluLen + 4);
+//
+//    } while (leftSize > 0);
+//}
 
 static gboolean mfwrapper_process_input(GstMFWrapper *decoder, GstBuffer *buf)
 {
@@ -515,7 +515,7 @@ static gboolean mfwrapper_process_input(GstMFWrapper *decoder, GstBuffer *buf)
             if (dwBufferSize >= info.size)
             {
                 memcpy_s(pbBuffer, dwBufferSize, info.data, info.size);
-                mfwrapper_nalu_to_start_code(pbBuffer, info.size);
+                //mfwrapper_nalu_to_start_code(pbBuffer, info.size);
             }
             else
             {
@@ -530,7 +530,7 @@ static gboolean mfwrapper_process_input(GstMFWrapper *decoder, GstBuffer *buf)
     else if (SUCCEEDED(hr))
     {
         memcpy_s(pbBuffer, dwBufferSize, info.data, info.size);
-        mfwrapper_nalu_to_start_code(pbBuffer, info.size);
+        //mfwrapper_nalu_to_start_code(pbBuffer, info.size);
     }
 
     if (decoder->header != NULL)

@@ -1,3 +1,28 @@
+/*
+ * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ *
+ * This code is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 only, as
+ * published by the Free Software Foundation.  Oracle designates this
+ * particular file as subject to the "Classpath" exception as provided
+ * by Oracle in the LICENSE file that accompanied this code.
+ *
+ * This code is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * version 2 for more details (a copy is included in the LICENSE file that
+ * accompanied this code).
+ *
+ * You should have received a copy of the GNU General Public License version
+ * 2 along with this work; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ * or visit www.oracle.com if you need additional information or have any
+ * questions.
+ */
+
 #include "gstmfbytestream.h"
 
 template <class T> void SafeRelease(T **ppT)
@@ -19,13 +44,29 @@ CGSTMFByteStream::CGSTMFByteStream(QWORD qwLength, GstPad *pSinkPad)
     m_cbBytes = 0;
     m_pCallback = NULL;
     m_pAsyncResult = NULL;
+    m_bWaitForEvent = FALSE;
 
     m_pSinkPad = pSinkPad;
+
+    InitializeCriticalSection(&m_csLock);
+}
+
+CGSTMFByteStream::~CGSTMFByteStream()
+{
+    ::DeleteCriticalSection(&m_csLock);
 }
 
 HRESULT CGSTMFByteStream::ReadRangeAvailable()
 {
-    return ReadData();
+    Lock();
+    BOOL bWaitForEvent = m_bWaitForEvent;
+    m_bWaitForEvent = FALSE;
+    Unlock();
+
+    if (bWaitForEvent)
+        return ReadData();
+    else
+        return S_FALSE;
 }
 
 // IMFByteStream
@@ -60,6 +101,10 @@ HRESULT CGSTMFByteStream::Close()
 
 HRESULT CGSTMFByteStream::EndRead(IMFAsyncResult *pResult, ULONG *pcbRead)
 {
+    Lock();
+    m_bWaitForEvent = FALSE;
+    Unlock();
+
     SafeRelease(&m_pAsyncResult);
 
     *pcbRead = m_cbBytes;
@@ -211,11 +256,17 @@ HRESULT CGSTMFByteStream::ReadData()
     guint64 offset = (guint64)m_qwPosition;
     guint size = (guint)m_cbBytes;
 
+    if (m_pAsyncResult == NULL)
+        return E_INVALIDARG;
+
     // Read data from upstream
     ret = gst_pad_pull_range(m_pSinkPad, offset, size, &buf);
     if (ret == GST_FLOW_FLUSHING)
     {
         // Wait for FX_EVENT_RANGE_READY. It will be send when data available.
+        Lock();
+        m_bWaitForEvent = TRUE;
+        Unlock();
         return S_OK;
     }
     else if (ret == GST_FLOW_OK)
@@ -237,10 +288,23 @@ HRESULT CGSTMFByteStream::ReadData()
 
         m_qwPosition += m_cbBytes;
 
-        HRESULT hr = m_pCallback->Invoke(m_pAsyncResult);
-
-        return S_OK;
+        return m_pCallback->Invoke(m_pAsyncResult);
+    }
+    else
+    {
+        m_cbBytes = 0;
+        return m_pCallback->Invoke(m_pAsyncResult);
     }
 
     return E_FAIL;
+}
+
+void CGSTMFByteStream::Lock()
+{
+    ::EnterCriticalSection(&m_csLock);
+}
+
+void CGSTMFByteStream::Unlock()
+{
+    ::LeaveCriticalSection(&m_csLock);
 }

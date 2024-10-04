@@ -38,6 +38,10 @@
 
 #include "fxplugins_common.h"
 
+// {00000000-0000-0000-0000-000000000000}
+static const GUID GUID_NULL =
+{ 0x00000000, 0x0000, 0x0000, { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } };
+
 typedef struct {
     JFX_CODEC_ID codecID;
     UINT32 uiChannels;
@@ -47,6 +51,8 @@ typedef struct {
 
 typedef struct {
     JFX_CODEC_ID codecID;
+    UINT32 uiWidth;
+    UINT32 uiHeight;
     GstBuffer *codec_data;
 } VideoFormat;
 
@@ -70,6 +76,10 @@ struct _GstMFDemux
 {
     GstElement element;
 
+    GMutex lock;
+
+    GstFlowReturn src_result;
+
     GstPad *sink_pad;         // input pad
 
     HRESULT hr_mfstartup;
@@ -79,14 +89,22 @@ struct _GstMFDemux
     gboolean is_eos;
     gboolean force_discontinuity;
     gboolean is_demux_initialized;
+    gboolean send_new_segment;
+
+    gdouble rate;
+    gint64 seek_position;
 
     CGSTMFByteStream *pGSTMFByteStream;
     IMFByteStream *pIMFByteStream;
     IMFSourceReader *pSourceReader;
 
+    LONGLONG llDuration;
+
     AudioFormat audioFormat;
+    VideoFormat videoFormat;
 
     GstPad *audio_src_pad;
+    GstPad *video_src_pad;
 };
 
 struct _GstMFDemuxClass

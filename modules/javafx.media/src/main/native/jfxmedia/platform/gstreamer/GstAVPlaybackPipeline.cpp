@@ -201,7 +201,7 @@ bool CGstAVPlaybackPipeline::IsCodecSupported(GstCaps *pCaps)
                 else if (strstr(mimetype, "video/x-h265") != NULL) // H.265
                 {
                     gboolean is_supported = FALSE;
-                    g_object_set(m_Elements[VIDEO_DECODER], "codec-id", (gint)JFX_CODEC_ID_H265, NULL); // Check for H265 (MP4)
+                    g_object_set(m_Elements[VIDEO_DECODER], "codec-id", (gint)JFX_CODEC_ID_HEVC, NULL); // Check for H265 (MP4)
                     g_object_get(m_Elements[VIDEO_DECODER], "is-supported", &is_supported, NULL);
                     if (is_supported)
                     {

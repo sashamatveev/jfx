@@ -33,7 +33,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#include <mfdemux.h>
+#include "mfdemux.h"
 
 //#include <mfidl.h>
 //#include <Wmcodecdsp.h>
@@ -190,6 +190,10 @@ static void gst_mfdemux_class_init(GstMFDemuxClass *klass)
 // Initialize instance structure
 static void gst_mfdemux_init(GstMFDemux *demux)
 {
+    g_mutex_init(&demux->lock);
+
+    demux->src_result = GST_FLOW_OK;
+
     // Input
     demux->sink_pad = gst_pad_new_from_static_template(&sink_factory, "sink");
     gst_pad_set_chain_function(demux->sink_pad, mfdemux_chain);
@@ -207,19 +211,32 @@ static void gst_mfdemux_init(GstMFDemux *demux)
     demux->is_eos = FALSE;
     demux->is_demux_initialized = FALSE;
     demux->force_discontinuity = FALSE;
+    demux->send_new_segment = TRUE;
     // demux->force_output_discontinuity = FALSE;
+
+    demux->rate = 1.0;
+    demux->seek_position = 0;
 
     demux->pGSTMFByteStream = NULL;
     demux->pIMFByteStream = NULL;
     demux->pSourceReader = NULL;
 
-    // Init audio format for some defaults
+    demux->llDuration = -1;
+
+    // Init audio format with some defaults
     demux->audioFormat.codecID = JFX_CODEC_ID_UNKNOWN;
     demux->audioFormat.uiChannels = 2;
     demux->audioFormat.uiRate = 48000;
     demux->audioFormat.codec_data = NULL;
 
+    // Init video format with some defaults
+    demux->videoFormat.codecID = JFX_CODEC_ID_UNKNOWN;
+    demux->videoFormat.uiWidth = 1920;
+    demux->videoFormat.uiHeight = 1080;
+    demux->videoFormat.codec_data = NULL;
+
     demux->audio_src_pad = NULL;
+    demux->video_src_pad = NULL;
 
     // Initialize Media Foundation
     bool bCallCoUninitialize = true;
@@ -251,6 +268,8 @@ static void gst_mfdemux_dispose(GObject* object)
 {
     GstMFDemux *demux = GST_MFDEMUX(object);
 
+    g_mutex_clear(&demux->lock);
+
     SafeRelease(&demux->pSourceReader);
     SafeRelease(&demux->pIMFByteStream);
 
@@ -265,6 +284,13 @@ static void gst_mfdemux_dispose(GObject* object)
         // INLINE - gst_buffer_unref()
         gst_buffer_unref(demux->audioFormat.codec_data);
         demux->audioFormat.codec_data = NULL;
+    }
+
+    if (demux->videoFormat.codec_data != NULL)
+    {
+        // INLINE - gst_buffer_unref()
+        gst_buffer_unref(demux->videoFormat.codec_data);
+        demux->videoFormat.codec_data = NULL;
     }
 
     if (demux->hr_mfstartup == S_OK)
@@ -316,8 +342,11 @@ static gboolean mfdemux_push_sink_event(GstMFDemux *demux, GstEvent *event)
 {
     gboolean ret = TRUE;
 
-    //if (gst_pad_is_linked(demux->srcpad))
-    //     ret = gst_pad_push_event(demux->srcpad, gst_event_ref(event));  // INLINE - gst_event_ref()
+    if (demux->audio_src_pad != NULL && gst_pad_is_linked(demux->audio_src_pad))
+        ret = gst_pad_push_event(demux->audio_src_pad, gst_event_ref(event));  // INLINE - gst_event_ref()
+
+    if (demux->video_src_pad != NULL && gst_pad_is_linked(demux->video_src_pad))
+        ret = gst_pad_push_event(demux->video_src_pad, gst_event_ref(event));  // INLINE - gst_event_ref()
 
     // INLINE - gst_event_unref()
     gst_event_unref(event);
@@ -335,8 +364,23 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     {
     case GST_EVENT_SEGMENT:
     {
+        GstSegment segment;
+        GstEvent *new_segment = NULL;
+
         demux->force_discontinuity = TRUE;
-        ret = mfdemux_push_sink_event(demux, event);
+
+        // INLINE - gst_event_unref()
+        gst_event_unref(event);
+        ret = TRUE;
+
+        // gst_segment_init (&segment, GST_FORMAT_TIME);
+        // segment.rate = 1.0;
+        // segment.start = 0;
+        // segment.stop = demux->llDuration * 100;
+        // segment.time = 0;
+        // segment.position = 0;
+        // new_segment = gst_event_new_segment (&segment);
+        // ret = mfdemux_push_sink_event(demux, new_segment);
         demux->is_eos_received = FALSE;
         demux->is_eos = FALSE;
     }
@@ -448,20 +492,14 @@ static gboolean mfdemux_src_query(GstPad *pad, GstObject *parent, GstQuery *quer
             GstFormat format;
 
             gst_query_parse_duration(query, &format, NULL);
-            if (format != GST_FORMAT_TIME)
-            {
+            if (format != GST_FORMAT_TIME || demux->llDuration == -1)
                 ret = gst_pad_query_default(pad, parent, query);
-            }
             else
-            {
-                //gst_query_set_duration(query, GST_FORMAT_TIME, filter->metadata->duration);
-            }
+                gst_query_set_duration(query, GST_FORMAT_TIME, demux->llDuration * 100);
         }
         break;
         default:
-        {
             ret = gst_pad_query_default(pad, parent, query);
-        }
     }
 
     return ret;
@@ -475,10 +513,83 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
     switch (GST_EVENT_TYPE (event))
     {
         case GST_EVENT_SEEK:
-            // TODO Seek
+        {
+            HRESULT hr = S_OK;
+            gdouble rate;           // segment rate
+            GstFormat format;       // format of the seek values
+            GstSeekFlags flags;     // the seek flags
+            GstSeekType start_type; // the seek type of the start position
+            GstSeekType stop_type;  // the seek type of the stop position
+            gint64 start;           // the seek start position in the given format
+            gint64 stop;            // the seek stop position in the given format
+            guint32 seqnum;
+
+            // Get seek description from the event.
+            gst_event_parse_seek (event, &rate, &format, &flags,
+                    &start_type, &start, &stop_type, &stop);
+            seqnum = gst_event_get_seqnum(event);
+            if (format == GST_FORMAT_TIME)
+            {
+                if (flags & GST_SEEK_FLAG_FLUSH)
+                {
+                    GstEvent *e = gst_event_new_flush_start();
+                    gst_event_set_seqnum(e, seqnum);
+                    // Push event upstream. We do not flush downstream, since
+                    // we working in pull mode.
+                    mfdemux_push_sink_event(demux, e);
+                }
+
+                // Stop streaming thread
+                g_mutex_lock(&demux->lock);
+                demux->src_result = GST_FLOW_FLUSHING;
+                g_mutex_unlock(&demux->lock);
+
+                // Lock pad. Streaming thread might be waiting for data, but
+                // it should release stream lock when doing it.
+                GST_PAD_STREAM_LOCK(demux->sink_pad);
+                // Unblock source reader if it was waiting for read.
+                if (demux->pSourceReader != NULL)
+                    hr = demux->pSourceReader->Flush(MF_SOURCE_READER_ALL_STREAMS);
+                // Unlock stream lock so streaming thread can continue.
+                GST_PAD_STREAM_UNLOCK(demux->sink_pad);
+
+                // Wait for streaming thread to exit
+                gst_pad_pause_task(demux->sink_pad);
+
+                demux->rate = rate;
+                demux->seek_position = start;
+                demux->send_new_segment = TRUE;
+
+                if (demux->pSourceReader != NULL)
+                {
+                    PROPVARIANT pv = {0};
+                    pv.vt = VT_I8;
+                    pv.hVal.QuadPart = (LONGLONG)(start/100);
+                    hr = demux->pSourceReader->SetCurrentPosition(GUID_NULL, pv);
+                    // TODO handle error
+                    PropVariantClear(&pv);
+                }
+
+                if (flags & GST_SEEK_FLAG_FLUSH)
+                {
+                    GstEvent *e = gst_event_new_flush_stop(TRUE);
+                    gst_event_set_seqnum(e, seqnum);
+                    mfdemux_push_sink_event(demux, e);
+                }
+
+                // Start streaming thread
+                g_mutex_lock(&demux->lock);
+                demux->src_result = GST_FLOW_OK;
+                g_mutex_unlock(&demux->lock);
+
+                gst_pad_start_task(demux->sink_pad, (GstTaskFunction) mfdemux_loop,
+                        demux->sink_pad, NULL);
+            }
+
             // INLINE - gst_event_unref()
             gst_event_unref (event);
-            break;
+        }
+        break;
         default:
             ret = gst_pad_push_event(demux->sink_pad, event);
             break;
@@ -510,6 +621,15 @@ static gboolean mfdemux_init_demux(GstMFDemux *demux, GstCaps *caps)
     if (FAILED(hr) || demux->pSourceReader == NULL)
         return FALSE;
 
+    // Get duration
+    PROPVARIANT pv = {0};
+    hr = demux->pSourceReader->GetPresentationAttribute(MF_SOURCE_READER_MEDIASOURCE, MF_PD_DURATION, &pv);
+    if (SUCCEEDED(hr))
+    {
+        demux->llDuration = (LONGLONG)pv.uhVal.QuadPart;
+        PropVariantClear(&pv);
+    }
+
     // Disable all streams. Disabled streams does not consume memory if not
     // read. MP4 might contain subtitles or additional audio stream and we do
     // not support it. We will enable needed streams when configuring demux.
@@ -522,10 +642,36 @@ static gboolean mfdemux_init_demux(GstMFDemux *demux, GstCaps *caps)
     return TRUE;
 }
 
-static UINT32 mfdemux_adjust_codec_data_blob()
+static UINT32 mfdemux_adjust_codec_data_blob(GstMFDemux *demux, UINT8 *pBlobBytes, UINT32 cbBlobSize, JFX_CODEC_ID codecID)
+{
+    // For AAC header we need to remove 0x00 padding before header.
+    // Header itself is 2 bytes. Not sure why MF adds padding, but
+    // DirectShow does not like it.
+    if (codecID == JFX_CODEC_ID_AAC && cbBlobSize > 2)
+    {
+        UINT32 pos = 0;
+        while (cbBlobSize >= 2)
+        {
+            if (pBlobBytes[pos] == 0x00)
+            {
+                pos++;
+                cbBlobSize--;
+            }
+            else
+            {
+                memcpy_s(pBlobBytes, cbBlobSize, &pBlobBytes[pos], cbBlobSize);
+                break;
+            }
+        }
+    }
+
+    return cbBlobSize;
+}
+
 // If codec_data not available or fail to read, then codec_data will be set to NULL.
 // We will attempt to playback anyway.
-static void mfdemux_get_codec_data(const GUID &guidKey, IMFMediaType *pMediaType, GstBuffer **codec_data)
+static void mfdemux_get_codec_data(GstMFDemux *demux, const GUID &guidKey,
+                                   IMFMediaType *pMediaType, GstBuffer **codec_data, JFX_CODEC_ID codecID)
 {
     UINT32 cbBlobSize = 0;
     UINT8 blobBytes[MAX_CODEC_DATA_SIZE] = {0};
@@ -538,14 +684,19 @@ static void mfdemux_get_codec_data(const GUID &guidKey, IMFMediaType *pMediaType
     {
         hr = pMediaType->GetBlob(guidKey, &blobBytes[0], cbBlobSize, NULL);
         if (SUCCEEDED(hr))
+            cbBlobSize = mfdemux_adjust_codec_data_blob(demux, &blobBytes[0], cbBlobSize, codecID);
 
-        (*codec_data) = gst_buffer_new_allocate(NULL, (gsize)cbBlobSize, NULL);
+        if (SUCCEEDED(hr))
+            (*codec_data) = gst_buffer_new_allocate(NULL, (gsize)cbBlobSize, NULL);
+
         if ((*codec_data) != NULL)
         {
             GstMapInfo info;
             if (gst_buffer_map((*codec_data), &info, GST_MAP_READWRITE))
             {
-                hr = pMediaType->GetBlob(guidKey, (UINT8*)info.data, cbBlobSize, NULL);
+                if (memcpy_s(info.data, info.maxsize, &blobBytes[0], cbBlobSize) != 0)
+                    hr = E_FAIL;
+
                 gst_buffer_unmap((*codec_data), &info);
                 if (SUCCEEDED(hr))
                     return;
@@ -592,8 +743,9 @@ static gboolean mfdemux_configure_audio_stream(GstMFDemux *demux)
                 &demux->audioFormat.uiChannels);
         pMediaType->GetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND,
                 &demux->audioFormat.uiRate);
-        mfdemux_get_codec_data(MF_MT_USER_DATA, pMediaType,
-                &demux->audioFormat.codec_data);
+        mfdemux_get_codec_data(demux, MF_MT_USER_DATA, pMediaType,
+                &demux->audioFormat.codec_data,
+                demux->audioFormat.codecID);
     }
 
     SafeRelease(&pMediaType);
@@ -672,6 +824,148 @@ static gboolean mfdemux_configure_audio_src_pad(GstMFDemux *demux)
     return TRUE;
 }
 
+static gboolean mfdemux_configure_video_stream(GstMFDemux *demux)
+{
+    HRESULT hr = S_OK;
+    IMFMediaType *pMediaType = NULL;
+    GUID subType;
+
+    hr = demux->pSourceReader->
+        SetStreamSelection((DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, TRUE);
+
+    if (SUCCEEDED(hr))
+    {
+        hr = demux->pSourceReader->
+            GetNativeMediaType((DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM,
+                               (DWORD)MF_SOURCE_READER_CURRENT_TYPE_INDEX,
+                               &pMediaType);
+    }
+
+    if (SUCCEEDED(hr))
+        hr = pMediaType->GetGUID(MF_MT_SUBTYPE, &subType);
+
+    if (IsEqualGUID(subType, MFVideoFormat_H264))
+    {
+        demux->videoFormat.codecID = JFX_CODEC_ID_H264;
+    }
+    else if (IsEqualGUID(subType, MFVideoFormat_HEVC))
+    {
+        demux->videoFormat.codecID = JFX_CODEC_ID_HEVC;
+    }
+    else
+    {
+        // Disable if format is not known
+        hr = demux->pSourceReader->
+            SetStreamSelection((DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, TRUE);
+    }
+
+    if (SUCCEEDED(hr) && (demux->videoFormat.codecID == JFX_CODEC_ID_H264 ||
+                        demux->videoFormat.codecID == JFX_CODEC_ID_HEVC))
+    {
+        MFGetAttributeSize(pMediaType, MF_MT_FRAME_SIZE,
+                           &demux->videoFormat.uiWidth,
+                           &demux->videoFormat.uiHeight);
+        mfdemux_get_codec_data(demux, MF_MT_MPEG_SEQUENCE_HEADER, pMediaType,
+                               &demux->videoFormat.codec_data,
+                               demux->videoFormat.codecID);
+    }
+
+    SafeRelease(&pMediaType);
+
+    if (FAILED(hr))
+        return FALSE;
+
+    return TRUE;
+}
+
+static gboolean mfdemux_configure_video_src_caps(GstMFDemux *demux)
+{
+    gboolean ret = FALSE;
+    GstCaps *caps = NULL;
+    GstEvent *caps_event = NULL;
+
+    if (demux->videoFormat.codecID != JFX_CODEC_ID_H264 &&
+        demux->videoFormat.codecID != JFX_CODEC_ID_HEVC)
+        return FALSE; // We should not be called with unsupported codec
+
+    if (demux->videoFormat.codecID == JFX_CODEC_ID_H264)
+    {
+        // Do not set width and height for H.264. In this case our
+        // DirectShow wrapper will consider this format as H264 with start codes.
+        // With width and height set DirectShow will try to decode it as H.264
+        // without start codes and it will fail. Once we switched to
+        // MediaFoundation for H.264 decoding we should set width and height
+        // similar to HEVC.
+        caps = gst_caps_new_simple ("video/x-h264",
+                //"width", G_TYPE_INT, (gint)demux->videoFormat.uiWidth,
+                //"height", G_TYPE_INT, (gint)demux->videoFormat.uiHeight,
+                NULL);
+    }
+    else if (demux->videoFormat.codecID == JFX_CODEC_ID_HEVC)
+    {
+        caps = gst_caps_new_simple ("video/x-h265",
+                "width", G_TYPE_INT, (gint)demux->videoFormat.uiWidth,
+                "height", G_TYPE_INT, (gint)demux->videoFormat.uiHeight,
+                NULL);
+    }
+
+    if (caps == NULL)
+        return FALSE;
+
+    if (demux->videoFormat.codec_data)
+        gst_caps_set_simple(caps, "codec_data", GST_TYPE_BUFFER,
+                            demux->videoFormat.codec_data, NULL);
+
+    caps_event = gst_event_new_caps(caps);
+    if (caps_event)
+        ret = gst_pad_push_event(demux->video_src_pad, caps_event);
+    gst_caps_unref(caps);
+
+    return ret;
+}
+
+static gboolean mfdemux_configure_video_src_pad(GstMFDemux *demux)
+{
+    if (!demux)
+        return FALSE;
+
+    if (demux->video_src_pad)
+        return TRUE;
+
+    if (demux->videoFormat.codecID != JFX_CODEC_ID_H264 &&
+        demux->videoFormat.codecID != JFX_CODEC_ID_HEVC)
+    {
+        return TRUE; // Just ignore unknown video stream
+    }
+
+    demux->video_src_pad =
+            gst_pad_new_from_template(gst_element_class_get_pad_template
+            (GST_ELEMENT_GET_CLASS(demux), "video"), "video");
+    if (demux->video_src_pad == NULL)
+        return FALSE;
+
+    gst_pad_set_query_function(demux->video_src_pad, mfdemux_src_query);
+    gst_pad_set_event_function(demux->video_src_pad, mfdemux_src_event);
+
+    if (!gst_pad_set_active(demux->video_src_pad, TRUE) ||
+        !mfdemux_configure_video_src_caps(demux))
+    {
+        gst_object_unref(demux->video_src_pad);
+        demux->video_src_pad = NULL;
+        return FALSE;
+    }
+
+    gst_pad_use_fixed_caps(demux->video_src_pad);
+
+    if (!gst_element_add_pad(GST_ELEMENT(demux), demux->video_src_pad)) {
+        // Pad will be unref even if gst_element_add_pad() fails
+        demux->video_src_pad = NULL;
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 // Enables streams and creates src pads
 static gboolean mfdemux_configure_demux(GstMFDemux *demux)
 {
@@ -684,13 +978,38 @@ static gboolean mfdemux_configure_demux(GstMFDemux *demux)
     if (!mfdemux_configure_audio_src_pad(demux))
         return FALSE;
 
+    if (!mfdemux_configure_video_stream(demux))
+        return FALSE;
+
+    if (!mfdemux_configure_video_src_pad(demux))
+        return FALSE;
+
     // No more pads are expected
     gst_element_no_more_pads(GST_ELEMENT(demux));
 
     return TRUE;
 }
 
-static GstFlowReturn mfdemux_deliver_sample(GstPad* pad, IMFSample *pMFSample)
+static void mfdemux_send_new_segment(GstMFDemux *demux, GstClockTime position)
+{
+    GstSegment segment;
+    GstEvent *new_segment = NULL;
+
+    gst_segment_init(&segment, GST_FORMAT_TIME);
+
+    segment.rate = demux->rate;
+    segment.start = demux->seek_position;
+    segment.stop = demux->llDuration * 100;
+    segment.time = demux->seek_position;
+    segment.position = position;
+    segment.duration = demux->llDuration * 100;
+
+    new_segment = gst_event_new_segment(&segment);
+    mfdemux_push_sink_event(demux, new_segment);
+}
+
+static GstFlowReturn mfdemux_deliver_sample(GstMFDemux *demux, GstPad* pad,
+                                            IMFSample *pMFSample)
 {
     GstFlowReturn ret = GST_FLOW_ERROR;
     IMFMediaBuffer *pMFBuffer = NULL;
@@ -701,8 +1020,8 @@ static GstFlowReturn mfdemux_deliver_sample(GstPad* pad, IMFSample *pMFSample)
     GstMapInfo info;
     gboolean unmap_buffer = FALSE;
 
+    // Allocate GStreamer buffer and copy data to it
     HRESULT hr = pMFSample->ConvertToContiguousBuffer(&pMFBuffer);
-
     if (SUCCEEDED(hr))
         hr = pMFBuffer->Lock(&pbMFBuffer, NULL, &cbMFCurrentLength);
 
@@ -731,6 +1050,29 @@ static GstFlowReturn mfdemux_deliver_sample(GstPad* pad, IMFSample *pMFSample)
 
     SafeRelease(&pMFBuffer);
 
+    // Set PTS, duration, etc.
+    LONGLONG hnsSampleTime = -1;
+    if (SUCCEEDED(hr) && SUCCEEDED(pMFSample->GetSampleTime(&hnsSampleTime)))
+        GST_BUFFER_TIMESTAMP(pBuffer) = (hnsSampleTime * 100);
+
+    LONGLONG hnsSampleDuration = -1;
+    if (SUCCEEDED(hr) && SUCCEEDED(pMFSample->GetSampleDuration(&hnsSampleDuration)))
+        GST_BUFFER_DURATION(pBuffer) = (hnsSampleDuration * 100);
+
+    UINT32 bDiscontinuity = FALSE;
+    if (SUCCEEDED(hr) && SUCCEEDED(pMFSample->GetUINT32(MFSampleExtension_Discontinuity, &bDiscontinuity)))
+    {
+        if (bDiscontinuity)
+            GST_BUFFER_FLAG_SET(pBuffer, GST_BUFFER_FLAG_DISCONT);
+    }
+
+    // Before pushing buffer send new segment if needed
+    if (demux->send_new_segment)
+    {
+        mfdemux_send_new_segment(demux, GST_BUFFER_TIMESTAMP(pBuffer));
+        demux->send_new_segment = FALSE;
+    }
+
     if (SUCCEEDED(hr))
         ret = gst_pad_push(pad, pBuffer);
 
@@ -750,6 +1092,7 @@ static GstFlowReturn mfdemux_deliver_sample(GstPad* pad, IMFSample *pMFSample)
 static void mfdemux_loop(GstPad * pad)
 {
     GstMFDemux *demux = GST_MFDEMUX(GST_PAD_PARENT(pad));
+    GstFlowReturn result = GST_FLOW_OK;
 
     if (!demux->is_demux_initialized)
     {
@@ -762,6 +1105,16 @@ static void mfdemux_loop(GstPad * pad)
         GST_PAD_STREAM_LOCK(pad);
     }
 
+    g_mutex_lock(&demux->lock);
+    result = demux->src_result;
+    g_mutex_unlock(&demux->lock);
+
+    if (result != GST_FLOW_OK)
+    {
+        gst_pad_pause_task(pad);
+        return;
+    }
+
     if (demux->pSourceReader == NULL)
     {
         gst_pad_pause_task(pad);
@@ -772,26 +1125,50 @@ static void mfdemux_loop(GstPad * pad)
     DWORD dwStreamFlags = 0;
     LONGLONG llTimestamp = -1;
     IMFSample *pSample = NULL;
+    GST_PAD_STREAM_UNLOCK(pad);
     HRESULT hr = demux->pSourceReader->ReadSample(MF_SOURCE_READER_ANY_STREAM,
                                                 0,
                                                 &dwActualStreamIndex,
                                                 &dwStreamFlags,
                                                 &llTimestamp,
                                                 &pSample);
+    GST_PAD_STREAM_LOCK(pad);
+    GstPad *src_pad = NULL;
     if (hr == S_OK)
     {
-        GstPad *src_pad = NULL;
-        //if (dwActualStreamIndex == MF_SOURCE_READER_FIRST_AUDIO_STREAM)
+        if (dwActualStreamIndex == 0)
             src_pad = demux->audio_src_pad;
-
-        if (src_pad != NULL)
-            mfdemux_deliver_sample(src_pad, pSample);
+        else if (dwActualStreamIndex == 1)
+            src_pad = demux->video_src_pad;
     }
 
-    SafeRelease(&pSample);
+    if (hr == S_OK && src_pad != NULL && pSample != NULL)
+    {
+        if (src_pad != NULL)
+            result = mfdemux_deliver_sample(demux, src_pad, pSample);
 
+        SafeRelease(&pSample);
+    }
+    else if (hr == S_OK)
+    {
+        if ((dwStreamFlags & MF_SOURCE_READERF_ENDOFSTREAM) == MF_SOURCE_READERF_ENDOFSTREAM)
+        {
+            // Deliver EOS to all src pads, since source reader reports it for
+            // last read only and not for each stream.
+            mfdemux_push_sink_event(demux, gst_event_new_eos());
+            result = GST_FLOW_EOS;
+        }
+    }
 
-    //gst_pad_pause_task(pad);
+    g_mutex_lock(&demux->lock);
+    if (GST_FLOW_OK == demux->src_result || GST_FLOW_OK != result)
+        demux->src_result = result;
+    else
+        result = demux->src_result;
+    g_mutex_unlock(&demux->lock);
+
+    if (result != GST_FLOW_OK)
+        gst_pad_pause_task(pad);
 }
 
 static gboolean mfdemux_activate(GstPad *pad, GstObject *parent)
@@ -827,18 +1204,31 @@ activate_push:
 
 static gboolean mfdemux_activate_mode(GstPad *pad, GstObject *parent, GstPadMode mode, gboolean active)
 {
+    GstMFDemux *demux = GST_MFDEMUX(parent);
     gboolean res = FALSE;
 
-    switch (mode) {
+    switch (mode)
+    {
     case GST_PAD_MODE_PUSH:
         res = TRUE;
         break;
     case GST_PAD_MODE_PULL:
-        if (active) {
-            res = gst_pad_start_task (pad, (GstTaskFunction) mfdemux_loop,
-                                      pad, NULL);
-        } else {
-            res = gst_pad_stop_task (pad);
+        if (active)
+        {
+            g_mutex_lock(&demux->lock);
+            demux->src_result = GST_FLOW_OK;
+            g_mutex_unlock(&demux->lock);
+
+            res = gst_pad_start_task(pad, (GstTaskFunction) mfdemux_loop,
+                    pad, NULL);
+        }
+        else
+        {
+            g_mutex_lock(&demux->lock);
+            demux->src_result = GST_FLOW_FLUSHING;
+            g_mutex_unlock(&demux->lock);
+
+            res = gst_pad_stop_task(pad);
         }
         break;
     default:

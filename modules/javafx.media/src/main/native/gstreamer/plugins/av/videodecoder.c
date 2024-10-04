@@ -208,7 +208,7 @@ static gboolean videodecoder_is_decoder_by_codec_id_supported(gint codec_id)
 {
     switch(codec_id)
     {
-    case JFX_CODEC_ID_H265:
+    case JFX_CODEC_ID_HEVC:
 #if HEVC_SUPPORT
         return TRUE;
 #else // HEVC_SUPPORT
