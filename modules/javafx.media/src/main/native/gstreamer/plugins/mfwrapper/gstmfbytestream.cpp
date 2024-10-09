@@ -53,7 +53,7 @@ CGSTMFByteStream::CGSTMFByteStream(QWORD qwLength, GstPad *pSinkPad)
 
 CGSTMFByteStream::~CGSTMFByteStream()
 {
-    ::DeleteCriticalSection(&m_csLock);
+    DeleteCriticalSection(&m_csLock);
 }
 
 HRESULT CGSTMFByteStream::ReadRangeAvailable()
@@ -80,23 +80,27 @@ HRESULT CGSTMFByteStream::BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallb
 
     m_pBytes = pb;
     m_cbBytes = (cb < m_qwLength) ? cb : m_qwLength;
+    if ((m_qwPosition + m_cbBytes) > m_qwLength)
+        m_cbBytes = m_qwLength - m_qwPosition;
     m_pCallback = pCallback;
 
     HRESULT hr = MFCreateAsyncResult(NULL, pCallback, punkState, &m_pAsyncResult);
     if (FAILED(hr))
         return hr;
+    //m_pAsyncResult = (IMFAsyncResult*)punkState;
 
     return ReadData();
 }
 
 HRESULT CGSTMFByteStream::BeginWrite(const BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback, IUnknown *punkState)
 {
-    return E_FAIL;
+    return E_NOTIMPL;
 }
 
 HRESULT CGSTMFByteStream::Close()
 {
-    return E_FAIL;
+    // Nothing to close
+    return S_OK;
 }
 
 HRESULT CGSTMFByteStream::EndRead(IMFAsyncResult *pResult, ULONG *pcbRead)
@@ -105,7 +109,9 @@ HRESULT CGSTMFByteStream::EndRead(IMFAsyncResult *pResult, ULONG *pcbRead)
     m_bWaitForEvent = FALSE;
     Unlock();
 
-    SafeRelease(&m_pAsyncResult);
+    //SafeRelease(&m_pAsyncResult);
+    if (pResult != NULL)
+        pResult->SetStatus(m_cbBytes > 0 ? S_OK : E_FAIL);
 
     *pcbRead = m_cbBytes;
 
@@ -114,12 +120,13 @@ HRESULT CGSTMFByteStream::EndRead(IMFAsyncResult *pResult, ULONG *pcbRead)
 
 HRESULT CGSTMFByteStream::EndWrite(IMFAsyncResult *pResult, ULONG *pcbWritten)
 {
-    return E_FAIL;
+    return E_NOTIMPL;
 }
 
 HRESULT CGSTMFByteStream::Flush()
 {
-    return E_FAIL;
+    // No need to flush upstream since we in pull mode.
+    return S_OK;
 }
 
 HRESULT CGSTMFByteStream::GetCapabilities(DWORD *pdwCapabilities)
@@ -155,7 +162,7 @@ HRESULT CGSTMFByteStream::IsEndOfStream(BOOL *pfEndOfStream)
 
 HRESULT CGSTMFByteStream::Read(BYTE *pb, ULONG cb, ULONG *pcbRead)
 {
-    return E_FAIL;
+    return E_NOTIMPL;
 }
 
 HRESULT CGSTMFByteStream::Seek(MFBYTESTREAM_SEEK_ORIGIN SeekOrigin, LONGLONG llSeekOffset, DWORD dwSeekFlags, QWORD *pqwCurrentPosition)
@@ -202,12 +209,12 @@ HRESULT CGSTMFByteStream::SetCurrentPosition(QWORD qwPosition)
 
 HRESULT CGSTMFByteStream::SetLength(QWORD qwLength)
 {
-    return E_FAIL;
+    return E_NOTIMPL;
 }
 
 HRESULT CGSTMFByteStream::Write(const BYTE *pb, ULONG cb, ULONG *pcbWritten)
 {
-    return E_FAIL;
+    return E_NOTIMPL;
 }
 
 // IUnknown
@@ -251,13 +258,11 @@ ULONG CGSTMFByteStream::Release()
 
 HRESULT CGSTMFByteStream::ReadData()
 {
+    HRESULT hr = S_OK;
     GstFlowReturn ret = GST_FLOW_ERROR;
     GstBuffer *buf = NULL;
     guint64 offset = (guint64)m_qwPosition;
     guint size = (guint)m_cbBytes;
-
-    if (m_pAsyncResult == NULL)
-        return E_INVALIDARG;
 
     // Read data from upstream
     ret = gst_pad_pull_range(m_pSinkPad, offset, size, &buf);
@@ -288,23 +293,23 @@ HRESULT CGSTMFByteStream::ReadData()
 
         m_qwPosition += m_cbBytes;
 
-        return m_pCallback->Invoke(m_pAsyncResult);
+        hr = m_pCallback->Invoke(m_pAsyncResult);
     }
     else
     {
         m_cbBytes = 0;
-        return m_pCallback->Invoke(m_pAsyncResult);
+        hr = m_pCallback->Invoke(m_pAsyncResult);
     }
 
-    return E_FAIL;
+    return hr;
 }
 
 void CGSTMFByteStream::Lock()
 {
-    ::EnterCriticalSection(&m_csLock);
+    EnterCriticalSection(&m_csLock);
 }
 
 void CGSTMFByteStream::Unlock()
 {
-    ::LeaveCriticalSection(&m_csLock);
+    LeaveCriticalSection(&m_csLock);
 }

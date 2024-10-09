@@ -33,10 +33,13 @@
 #include <string.h>
 #include <stdio.h>
 
+#include <Mferror.h>
+
 #include "mfdemux.h"
 
 //#include <mfidl.h>
 //#include <Wmcodecdsp.h>
+
 
 using namespace std;
 
@@ -709,7 +712,7 @@ static void mfdemux_get_codec_data(GstMFDemux *demux, const GUID &guidKey,
     }
 }
 
-static gboolean mfdemux_configure_audio_stream(GstMFDemux *demux)
+static gboolean mfdemux_configure_audio_stream(GstMFDemux *demux, gboolean *hasAudio)
 {
     HRESULT hr = S_OK;
     IMFMediaType *pMediaType = NULL;
@@ -717,6 +720,13 @@ static gboolean mfdemux_configure_audio_stream(GstMFDemux *demux)
 
     hr = demux->pSourceReader->
         SetStreamSelection((DWORD)MF_SOURCE_READER_FIRST_AUDIO_STREAM, TRUE);
+    if (hr == MF_E_INVALIDSTREAMNUMBER)
+    {
+        (*hasAudio) = false;
+        return TRUE;
+    }
+
+    (*hasAudio) = true;
 
     if (SUCCEEDED(hr))
     {
@@ -824,7 +834,7 @@ static gboolean mfdemux_configure_audio_src_pad(GstMFDemux *demux)
     return TRUE;
 }
 
-static gboolean mfdemux_configure_video_stream(GstMFDemux *demux)
+static gboolean mfdemux_configure_video_stream(GstMFDemux *demux, gboolean *hasVideo)
 {
     HRESULT hr = S_OK;
     IMFMediaType *pMediaType = NULL;
@@ -832,6 +842,13 @@ static gboolean mfdemux_configure_video_stream(GstMFDemux *demux)
 
     hr = demux->pSourceReader->
         SetStreamSelection((DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, TRUE);
+    if (hr == MF_E_INVALIDSTREAMNUMBER)
+    {
+        (*hasVideo) = false;
+        return TRUE;
+    }
+
+    (*hasVideo) = true;
 
     if (SUCCEEDED(hr))
     {
@@ -969,19 +986,22 @@ static gboolean mfdemux_configure_video_src_pad(GstMFDemux *demux)
 // Enables streams and creates src pads
 static gboolean mfdemux_configure_demux(GstMFDemux *demux)
 {
+    gboolean hasAudio = false;
+    gboolean hasVideo = false;
+
     if (!demux->is_demux_initialized)
         return FALSE;
 
-    if (!mfdemux_configure_audio_stream(demux))
+    if (!mfdemux_configure_audio_stream(demux, &hasAudio))
         return FALSE;
 
-    if (!mfdemux_configure_audio_src_pad(demux))
+    if (hasAudio && !mfdemux_configure_audio_src_pad(demux))
         return FALSE;
 
-    if (!mfdemux_configure_video_stream(demux))
+    if (!mfdemux_configure_video_stream(demux, &hasVideo))
         return FALSE;
 
-    if (!mfdemux_configure_video_src_pad(demux))
+    if (hasVideo && !mfdemux_configure_video_src_pad(demux))
         return FALSE;
 
     // No more pads are expected

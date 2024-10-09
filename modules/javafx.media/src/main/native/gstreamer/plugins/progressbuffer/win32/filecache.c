@@ -184,6 +184,9 @@ gboolean cache_set_read_position(Cache* cache, gint64 position)
         if (result)
             cache->read_position = position;
     }
+    
+    if (!result)
+        return result;
     return result;
 }
 
