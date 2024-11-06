@@ -150,3 +150,5 @@ gst_query_new_scheduling	@149	NONAME
 gst_query_has_scheduling_mode_with_flags	@150	NONAME
 gst_pad_peer_query	@151	NONAME
 gst_pad_pull_range	@152	NONAME
+gst_event_get_structure	@153	NONAME
+gst_structure_get_int64	@154	NONAME

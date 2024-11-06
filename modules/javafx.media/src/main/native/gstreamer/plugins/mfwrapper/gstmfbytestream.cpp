@@ -39,9 +39,12 @@ CGSTMFByteStream::CGSTMFByteStream(QWORD qwLength, GstPad *pSinkPad)
     m_ulRefCount = 0;
     m_qwPosition = 0;
     m_qwLength = qwLength;
+    m_qwSegmentPosition = 0;
+    m_qwSegmentLength = -1;
 
     m_pBytes = NULL;
     m_cbBytes = 0;
+    m_cbBytesRead = 0;
     m_pCallback = NULL;
     m_pAsyncResult = NULL;
     m_bWaitForEvent = FALSE;
@@ -69,6 +72,20 @@ HRESULT CGSTMFByteStream::ReadRangeAvailable()
         return S_FALSE;
 }
 
+void CGSTMFByteStream::SetSegmentLength(QWORD qwSegmentLength)
+{
+    Lock();
+    if (m_bWaitForEvent)
+    {
+        m_qwSegmentLength = qwSegmentLength;
+        m_qwSegmentPosition = 0;
+    }
+    Unlock();
+
+    //m_qwLength = qwSegmentLength;
+    //m_qwPosition = 0;
+}
+
 // IMFByteStream
 HRESULT CGSTMFByteStream::BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback, IUnknown *punkState)
 {
@@ -78,15 +95,41 @@ HRESULT CGSTMFByteStream::BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallb
     if (m_pSinkPad == NULL)
         return E_POINTER;
 
+    // Save read request
     m_pBytes = pb;
-    m_cbBytes = (cb < m_qwLength) ? cb : m_qwLength;
-    if ((m_qwPosition + m_cbBytes) > m_qwLength)
-        m_cbBytes = m_qwLength - m_qwPosition;
+    m_cbBytes = cb;
     m_pCallback = pCallback;
 
     HRESULT hr = MFCreateAsyncResult(NULL, pCallback, punkState, &m_pAsyncResult);
     if (FAILED(hr))
         return hr;
+
+    // Check if we have segment ready
+    if (m_qwSegmentLength == -1)
+    {
+        gint64 data_length = 0;
+        if (gst_pad_peer_query_duration(m_pSinkPad, GST_FORMAT_BYTES, &data_length))
+            SetSegmentLength((QWORD)data_length);
+        else
+            m_qwSegmentLength = -1;
+    }
+
+    // Nothing to read, so wait for event
+    if (m_qwLength == -1 && m_qwSegmentLength == -1)
+    {
+        Lock();
+        m_bWaitForEvent = TRUE;
+        Unlock();
+        return S_OK;
+    }
+
+    // QWORD qwDataLength = m_qwLength != -1 ? m_qwLength : m_qwSegmentLength;
+    // m_pBytes = pb;
+    // m_cbBytes = (cb < qwDataLength) ? cb : qwDataLength;
+    // if ((m_qwPosition + m_cbBytes) > qwDataLength)
+    //     m_cbBytes = qwDataLength - m_qwPosition;
+    // m_pCallback = pCallback;
+
     //m_pAsyncResult = (IMFAsyncResult*)punkState;
 
     return ReadData();
@@ -203,6 +246,9 @@ HRESULT CGSTMFByteStream::SetCurrentPosition(QWORD qwPosition)
         return S_OK;
 
     m_qwPosition = qwPosition;
+    // During initialization MF will re-read from 0 several times, so
+    // if position request for 0 reset segment position as well.
+    m_qwSegmentPosition = 0;
 
     return S_OK;
 }
@@ -261,11 +307,34 @@ HRESULT CGSTMFByteStream::ReadData()
     HRESULT hr = S_OK;
     GstFlowReturn ret = GST_FLOW_ERROR;
     GstBuffer *buf = NULL;
-    guint64 offset = (guint64)m_qwPosition;
-    guint size = (guint)m_cbBytes;
+    guint64 offset = 0;
+    ULONG cbBytes = 0;
+
+    // Adjust read bytes
+    if (m_qwLength == -1 && m_qwSegmentLength == -1) // Nothing to read, but unlikely
+    {
+        m_cbBytes = 0;
+        hr = m_pCallback->Invoke(m_pAsyncResult);
+    }
+
+    if (m_qwLength != -1)
+    {
+        cbBytes = (m_cbBytes < m_qwLength) ? m_cbBytes : m_qwLength;
+        if ((m_qwPosition + m_cbBytes) > m_qwLength)
+            cbBytes = m_qwLength - m_qwPosition;
+        offset = (guint64)m_qwPosition;
+    }
+
+    if (m_qwSegmentLength != -1)
+    {
+        cbBytes = (m_cbBytes < m_qwSegmentLength) ? m_cbBytes : m_qwSegmentLength;
+        if ((m_qwSegmentPosition + m_cbBytes) > m_qwSegmentLength)
+            cbBytes = m_qwSegmentLength - m_qwSegmentPosition;
+        offset = (guint64)m_qwSegmentPosition;
+    }
 
     // Read data from upstream
-    ret = gst_pad_pull_range(m_pSinkPad, offset, size, &buf);
+    ret = gst_pad_pull_range(m_pSinkPad, offset, (guint)cbBytes, &buf);
     if (ret == GST_FLOW_FLUSHING)
     {
         // Wait for FX_EVENT_RANGE_READY. It will be send when data available.
@@ -284,16 +353,25 @@ HRESULT CGSTMFByteStream::ReadData()
             return E_FAIL;
         }
 
-        memcpy(m_pBytes, info.data, m_cbBytes);
+        memcpy(m_pBytes, info.data, cbBytes);
 
         gst_buffer_unmap(buf, &info);
 
         // INLINE - gst_buffer_unref()
         gst_buffer_unref(buf);
 
-        m_qwPosition += m_cbBytes;
+        m_qwPosition += cbBytes;
+        m_qwSegmentPosition += cbBytes;
 
-        hr = m_pCallback->Invoke(m_pAsyncResult);
+        if (cbBytes == m_cbBytes)
+        {
+            hr = m_pCallback->Invoke(m_pAsyncResult);
+        }
+        else
+        {
+            m_cbBytesRead = cbBytes;
+            m_pBytes += cbBytes;
+        }
     }
     else
     {

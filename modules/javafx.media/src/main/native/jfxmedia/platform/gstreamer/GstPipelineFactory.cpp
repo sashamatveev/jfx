@@ -571,13 +571,15 @@ uint32_t CGstPipelineFactory::CreateHLSPipeline(GstElement* pVideoSink, CPipelin
         if (pOptions->GetStreamMimeType() == HLS_VALUE_MIMETYPE_MP2T)
             pOptions->SetStreamParser("dshowwrapper")->SetVideoDecoder("dshowwrapper");
         else if (pOptions->GetStreamMimeType() == HLS_VALUE_MIMETYPE_FMP4)
-            pOptions->SetStreamParser("qtdemux"); // Video decoder loaded dynamically
+            //pOptions->SetStreamParser("qtdemux"); // Video decoder loaded dynamically
+            pOptions->SetStreamParser("mfdemux"); // Video decoder loaded dynamically
         else
             return ERROR_PLATFORM_UNSUPPORTED;
 
         // Audio stream can be FMP4 or AAC
         if (pOptions->GetAudioStreamMimeType() == HLS_VALUE_MIMETYPE_FMP4)
-            pOptions->SetAudioStreamParser("qtdemux")->SetAudioDecoder("dshowwrapper");
+            //pOptions->SetAudioStreamParser("qtdemux")->SetAudioDecoder("dshowwrapper");
+            pOptions->SetAudioStreamParser("mfdemux")->SetAudioDecoder("dshowwrapper");
         else if (pOptions->GetAudioStreamMimeType() == HLS_VALUE_MIMETYPE_AAC)
             pOptions->SetAudioDecoder("dshowwrapper");
         else
@@ -605,7 +607,8 @@ uint32_t CGstPipelineFactory::CreateHLSPipeline(GstElement* pVideoSink, CPipelin
         else if (pOptions->GetStreamMimeType() == HLS_VALUE_MIMETYPE_FMP4)
         {
             // Video decoder is loaded dynamically
-            pOptions->SetStreamParser("qtdemux")->SetAudioDecoder("dshowwrapper");
+            //pOptions->SetStreamParser("qtdemux")->SetAudioDecoder("dshowwrapper");
+            pOptions->SetStreamParser("mfdemux")->SetAudioDecoder("dshowwrapper");
             return CreateAVPipeline(true, pVideoSink, pOptions, pElements, ppPipeline);
         }
         else

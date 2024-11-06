@@ -70,11 +70,10 @@ GST_STATIC_PAD_TEMPLATE("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS(
-        "video/mp4"
-//        "video/mp4;"
-//        "video/quicktime;"
-//        "audio/x-m4a;"
-//        "video/x-m4v"
+        "video/mp4;"
+        "video/quicktime;"
+        "audio/x-m4a;"
+        "video/x-m4v"
     ));
 
 // The output capabilities
@@ -367,25 +366,11 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     {
     case GST_EVENT_SEGMENT:
     {
-        GstSegment segment;
-        GstEvent *new_segment = NULL;
-
         demux->force_discontinuity = TRUE;
-
-        // INLINE - gst_event_unref()
-        gst_event_unref(event);
-        ret = TRUE;
-
-        // gst_segment_init (&segment, GST_FORMAT_TIME);
-        // segment.rate = 1.0;
-        // segment.start = 0;
-        // segment.stop = demux->llDuration * 100;
-        // segment.time = 0;
-        // segment.position = 0;
-        // new_segment = gst_event_new_segment (&segment);
-        // ret = mfdemux_push_sink_event(demux, new_segment);
         demux->is_eos_received = FALSE;
         demux->is_eos = FALSE;
+
+        ret = mfdemux_push_sink_event(demux, event);
     }
     break;
     case GST_EVENT_FLUSH_START:
@@ -458,7 +443,29 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
         if (demux->pGSTMFByteStream)
             demux->pGSTMFByteStream->ReadRangeAvailable();
 
+        // INLINE - gst_event_unref()
         gst_event_unref(event);
+        ret = TRUE;
+    }
+    case FX_EVENT_SEGMENT_READY:
+    {
+        gint64 size = -1;
+        const GstStructure *s = gst_event_get_structure(event);
+        if (s != NULL)
+        {
+            if (!gst_structure_get_int64(s, "size", &size))
+                size = -1;
+        }
+
+        if (demux->pGSTMFByteStream)
+        {
+            demux->pGSTMFByteStream->SetSegmentLength((QWORD)size);
+            demux->pGSTMFByteStream->ReadRangeAvailable();
+        }
+
+        // INLINE - gst_event_unref()
+        gst_event_unref(event);
+        ret = TRUE;
     }
     break;
     default:
@@ -1166,6 +1173,8 @@ static void mfdemux_loop(GstPad * pad)
     {
         if (src_pad != NULL)
             result = mfdemux_deliver_sample(demux, src_pad, pSample);
+        if (result != GST_FLOW_OK)
+            result = result;
 
         SafeRelease(&pSample);
     }
@@ -1177,6 +1186,7 @@ static void mfdemux_loop(GstPad * pad)
             // last read only and not for each stream.
             mfdemux_push_sink_event(demux, gst_event_new_eos());
             result = GST_FLOW_EOS;
+            //result = GST_FLOW_OK;
         }
     }
 
