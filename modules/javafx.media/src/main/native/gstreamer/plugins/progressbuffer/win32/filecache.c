@@ -154,6 +154,23 @@ GstFlowReturn cache_read_buffer_from_position(Cache* cache, gint64 start_positio
     return result;
 }
 
+GstFlowReturn cache_read_buffer_from_position2(Cache* cache, gint64 start_position, guint size, GstBuffer** buffer)
+{
+    GstFlowReturn result = GST_FLOW_ERROR;
+
+    if (cache == NULL)
+        return GST_FLOW_ERROR;
+
+    gint64 bytes_available = cache_bytes_available(cache);
+    if (bytes_available == 0)
+        return GST_FLOW_FLUSHING;
+
+    if ((gint64)size > bytes_available)
+        size = bytes_available;
+
+    return cache_read_buffer_from_position(cache, start_position, size, buffer);
+}
+
 static gboolean cache_set_handler_position(HANDLE handle, guint64 position)
 {
     LARGE_INTEGER li;
@@ -184,7 +201,7 @@ gboolean cache_set_read_position(Cache* cache, gint64 position)
         if (result)
             cache->read_position = position;
     }
-    
+
     if (!result)
         return result;
     return result;
@@ -193,4 +210,12 @@ gboolean cache_set_read_position(Cache* cache, gint64 position)
 gboolean cache_has_enough_data(Cache* cache)
 {
     return cache->read_position < cache->write_position;
+}
+
+gint64 cache_bytes_available(Cache* cache)
+{
+    if (cache_has_enough_data(cache))
+        return (cache->write_position - cache->read_position);
+    else
+        return 0;
 }

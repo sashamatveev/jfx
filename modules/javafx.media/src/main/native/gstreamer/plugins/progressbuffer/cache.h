@@ -51,6 +51,12 @@ gint64         cache_read_buffer(Cache* cache, GstBuffer** buffer);
  */
 GstFlowReturn  cache_read_buffer_from_position(Cache* cache, gint64 start_position, guint size, GstBuffer** buffer);
 
+/* Reads a buffer of the specified size or less and start position.
+ * Returns GST_FLOW_OK if the seek operation and subsequent read operation
+ * were successfull. GST_FLOW_ERROR otherwise.
+ */
+GstFlowReturn  cache_read_buffer_from_position2(Cache* cache, gint64 start_position, guint size, GstBuffer** buffer);
+
 // Sets a new write position
 gboolean       cache_set_write_position(Cache* cache, gint64 position);
 
@@ -59,5 +65,11 @@ gboolean       cache_set_read_position(Cache* cache, gint64 position);
 
 // Returns true if the cache has enough data for fluent reading, but we can't expect more than total.
 gboolean       cache_has_enough_data(Cache* cache);
+
+// Returns true if the cache has enough data for fluent reading, but we can't expect more than total.
+gboolean       cache_has_enough_data(Cache* cache);
+
+// Returns number of bytes available to read or 0 if no bytes left
+gint64         cache_bytes_available(Cache* cache);
 
 #endif // __CACHE_H__

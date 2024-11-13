@@ -459,7 +459,7 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
 
         if (demux->pGSTMFByteStream)
         {
-            demux->pGSTMFByteStream->SetSegmentLength((QWORD)size);
+            demux->pGSTMFByteStream->SetSegmentLength((QWORD)size, false);
             demux->pGSTMFByteStream->ReadRangeAvailable();
         }
 
@@ -534,6 +534,9 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
             gint64 stop;            // the seek stop position in the given format
             guint32 seqnum;
 
+            if (demux->pGSTMFByteStream == NULL || demux->pSourceReader == NULL)
+                return FALSE; // Something wrong, but unlikely.
+
             // Get seek description from the event.
             gst_event_parse_seek (event, &rate, &format, &flags,
                     &start_type, &start, &stop_type, &stop);
@@ -544,7 +547,7 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                 {
                     GstEvent *e = gst_event_new_flush_start();
                     gst_event_set_seqnum(e, seqnum);
-                    // Push event upstream. We do not flush downstream, since
+                    // Push event dowstream. We do not flush upstream, since
                     // we working in pull mode.
                     mfdemux_push_sink_event(demux, e);
                 }
@@ -558,23 +561,30 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                 // it should release stream lock when doing it.
                 GST_PAD_STREAM_LOCK(demux->sink_pad);
                 // Unblock source reader if it was waiting for read.
-                if (demux->pSourceReader != NULL)
-                    hr = demux->pSourceReader->Flush(MF_SOURCE_READER_ALL_STREAMS);
+                hr = demux->pSourceReader->Flush(MF_SOURCE_READER_ALL_STREAMS);
                 // Unlock stream lock so streaming thread can continue.
                 GST_PAD_STREAM_UNLOCK(demux->sink_pad);
 
                 // Wait for streaming thread to exit
                 gst_pad_pause_task(demux->sink_pad);
 
-                demux->rate = rate;
-                demux->seek_position = start;
-                demux->send_new_segment = TRUE;
+                if (demux->pGSTMFByteStream->IsSeekSupported())
+                {
+                    demux->rate = rate;
+                    demux->seek_position = start;
+                    demux->send_new_segment = TRUE;
+                }
+                else
+                {
+                    demux->pGSTMFByteStream->SetSegmentLength(-1, true);
+                    ret = gst_pad_push_event(demux->sink_pad, event);
+                }
 
                 if (demux->pSourceReader != NULL)
                 {
-                    PROPVARIANT pv = {0};
+                    PROPVARIANT pv = { 0 };
                     pv.vt = VT_I8;
-                    pv.hVal.QuadPart = (LONGLONG)(start/100);
+                    pv.hVal.QuadPart = (LONGLONG)(start / 100);
                     hr = demux->pSourceReader->SetCurrentPosition(GUID_NULL, pv);
                     // TODO handle error
                     PropVariantClear(&pv);

@@ -530,18 +530,19 @@ static GstFlowReturn hls_progress_buffer_getrange(GstPad *pad, GstObject *parent
     if (!element->cache_read_ready[element->cache_read_index])
     {
         send_hls_not_full_message(element);
-        result = GST_FLOW_FLUSHING;
+        g_mutex_unlock(&element->lock);
+        return GST_FLOW_FLUSHING;
     }
     else
     {
-        // We should have enough data since upstream should not try to read
-        // more then we have.
-        result = cache_read_buffer_from_position(
+        // Read data as requested or less.
+        result = cache_read_buffer_from_position2(
                 element->cache[element->cache_read_index], start_position,
                 size, buffer);
     }
 
-    // Check if we still has something to read. If no signal that we done.
+    // Check if we still has something to read. If no signal that we done with
+    // cached segment and move to the next one.
     if (!cache_has_enough_data(element->cache[element->cache_read_index]))
     {
         element->cache_write_ready[element->cache_read_index] = TRUE;

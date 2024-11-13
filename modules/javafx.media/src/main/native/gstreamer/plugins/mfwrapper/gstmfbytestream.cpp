@@ -25,6 +25,8 @@
 
 #include "gstmfbytestream.h"
 
+#define ENABLE_TRACE 1
+
 template <class T> void SafeRelease(T **ppT)
 {
     if (*ppT)
@@ -33,6 +35,12 @@ template <class T> void SafeRelease(T **ppT)
         *ppT = NULL;
     }
 }
+
+#if ENABLE_TRACE
+    #define TRACE g_print
+#else // ENABLE_TRACE
+    #define TRACE
+#endif // ENABLE_TRACE
 
 CGSTMFByteStream::CGSTMFByteStream(QWORD qwLength, GstPad *pSinkPad)
 {
@@ -47,6 +55,7 @@ CGSTMFByteStream::CGSTMFByteStream(QWORD qwLength, GstPad *pSinkPad)
     m_cbBytesRead = 0;
     m_pCallback = NULL;
     m_pAsyncResult = NULL;
+    m_readResult = E_FAIL;
     m_bWaitForEvent = FALSE;
 
     m_pSinkPad = pSinkPad;
@@ -72,10 +81,10 @@ HRESULT CGSTMFByteStream::ReadRangeAvailable()
         return S_FALSE;
 }
 
-void CGSTMFByteStream::SetSegmentLength(QWORD qwSegmentLength)
+void CGSTMFByteStream::SetSegmentLength(QWORD qwSegmentLength, bool bForce)
 {
     Lock();
-    if (m_bWaitForEvent)
+    if (bForce || m_bWaitForEvent)
     {
         m_qwSegmentLength = qwSegmentLength;
         m_qwSegmentPosition = 0;
@@ -86,42 +95,57 @@ void CGSTMFByteStream::SetSegmentLength(QWORD qwSegmentLength)
     //m_qwPosition = 0;
 }
 
+// Even if we reporting MFBYTESTREAM_IS_SEEKABLE to MF to make it happy (will not
+// initialized otherwise), we can only issue seek on MF source reader if length
+// is known (HTTP/FILE). For HLS we wil forward seek event upstream to handle
+// seek.
+bool CGSTMFByteStream::IsSeekSupported()
+{
+    return (m_qwLength != -1);
+}
+
 // IMFByteStream
 HRESULT CGSTMFByteStream::BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback, IUnknown *punkState)
 {
+    HRESULT hr = S_OK;
+
     if (pb == NULL || pCallback == NULL)
         return E_POINTER;
 
     if (m_pSinkPad == NULL)
         return E_POINTER;
 
+    TRACE("JFXMEDIA CGSTMFByteStream::BeginRead() cb: %lu m_qwSegmentLength: %llu m_qwSegmentPosition: %llu\n", cb, m_qwSegmentLength, m_qwSegmentPosition);
+
     // Save read request
     m_pBytes = pb;
     m_cbBytes = cb;
+    m_cbBytesRead = 0;
     m_pCallback = pCallback;
 
-    HRESULT hr = MFCreateAsyncResult(NULL, pCallback, punkState, &m_pAsyncResult);
+    // Create async result object to signal read completion
+    hr = MFCreateAsyncResult(NULL, pCallback, punkState, &m_pAsyncResult);
     if (FAILED(hr))
         return hr;
 
-    // Check if we have segment ready
-    if (m_qwSegmentLength == -1)
-    {
-        gint64 data_length = 0;
-        if (gst_pad_peer_query_duration(m_pSinkPad, GST_FORMAT_BYTES, &data_length))
-            SetSegmentLength((QWORD)data_length);
-        else
-            m_qwSegmentLength = -1;
-    }
+    // // Check if we have segment ready
+    // if (m_qwSegmentLength == -1)
+    // {
+    //     gint64 data_length = 0;
+    //     if (gst_pad_peer_query_duration(m_pSinkPad, GST_FORMAT_BYTES, &data_length))
+    //         SetSegmentLength((QWORD)data_length);
+    //     else
+    //         m_qwSegmentLength = -1;
+    // }
 
-    // Nothing to read, so wait for event
-    if (m_qwLength == -1 && m_qwSegmentLength == -1)
-    {
-        Lock();
-        m_bWaitForEvent = TRUE;
-        Unlock();
-        return S_OK;
-    }
+    // // Nothing to read, so wait for event
+    // if (m_qwLength == -1 && m_qwSegmentLength == -1)
+    // {
+    //     Lock();
+    //     m_bWaitForEvent = TRUE;
+    //     Unlock();
+    //     return S_OK;
+    // }
 
     // QWORD qwDataLength = m_qwLength != -1 ? m_qwLength : m_qwSegmentLength;
     // m_pBytes = pb;
@@ -152,11 +176,12 @@ HRESULT CGSTMFByteStream::EndRead(IMFAsyncResult *pResult, ULONG *pcbRead)
     m_bWaitForEvent = FALSE;
     Unlock();
 
-    //SafeRelease(&m_pAsyncResult);
     if (pResult != NULL)
-        pResult->SetStatus(m_cbBytes > 0 ? S_OK : E_FAIL);
+        pResult->SetStatus(m_readResult);
 
-    *pcbRead = m_cbBytes;
+    *pcbRead = m_cbBytesRead;
+
+    TRACE("JFXMEDIA CGSTMFByteStream::EndRead() m_cbBytesRead: %lu\n", m_cbBytesRead);
 
     return S_OK;
 }
@@ -239,16 +264,24 @@ HRESULT CGSTMFByteStream::Seek(MFBYTESTREAM_SEEK_ORIGIN SeekOrigin, LONGLONG llS
 
 HRESULT CGSTMFByteStream::SetCurrentPosition(QWORD qwPosition)
 {
+    g_print("AMDEBUG CGSTMFByteStream::SetCurrentPosition() %llu\n", qwPosition);
     if (qwPosition > m_qwLength)
         return E_INVALIDARG;
 
     if (m_qwPosition == qwPosition)
         return S_OK;
 
-    m_qwPosition = qwPosition;
-    // During initialization MF will re-read from 0 several times, so
-    // if position request for 0 reset segment position as well.
-    m_qwSegmentPosition = 0;
+    if (m_qwLength != -1)
+    {
+        m_qwPosition = qwPosition;
+    }
+    else if (qwPosition == 0)
+    {
+        // During initialization MF will re-read from 0 several times, so
+        // if position request for 0 reset segment position as well.
+        m_qwPosition = 0;
+        m_qwSegmentPosition = 0;
+    }
 
     return S_OK;
 }
@@ -311,75 +344,147 @@ HRESULT CGSTMFByteStream::ReadData()
     ULONG cbBytes = 0;
 
     // Adjust read bytes
-    if (m_qwLength == -1 && m_qwSegmentLength == -1) // Nothing to read, but unlikely
-    {
-        m_cbBytes = 0;
-        hr = m_pCallback->Invoke(m_pAsyncResult);
-    }
+    // if (m_qwLength == -1 && m_qwSegmentLength == -1) // Nothing to read, but unlikely
+    // {
+    //     m_cbBytes = 0;
+    //     hr = m_pCallback->Invoke(m_pAsyncResult);
+    // }
 
-    if (m_qwLength != -1)
-    {
-        cbBytes = (m_cbBytes < m_qwLength) ? m_cbBytes : m_qwLength;
-        if ((m_qwPosition + m_cbBytes) > m_qwLength)
-            cbBytes = m_qwLength - m_qwPosition;
-        offset = (guint64)m_qwPosition;
-    }
+    // if (m_qwLength != -1)
+    // {
+    //     cbBytes = (m_cbBytes < m_qwLength) ? m_cbBytes : m_qwLength;
+    //     if ((m_qwPosition + m_cbBytes) > m_qwLength)
+    //         cbBytes = m_qwLength - m_qwPosition;
+    //     offset = (guint64)m_qwPosition;
+    // }
+    // if (m_qwLength == -1 && m_qwSegmentLength == -1)
+    // {
+    //     return PrepareWaitForData();
+    // }
 
-    if (m_qwSegmentLength != -1)
-    {
-        cbBytes = (m_cbBytes < m_qwSegmentLength) ? m_cbBytes : m_qwSegmentLength;
-        if ((m_qwSegmentPosition + m_cbBytes) > m_qwSegmentLength)
-            cbBytes = m_qwSegmentLength - m_qwSegmentPosition;
-        offset = (guint64)m_qwSegmentPosition;
-    }
+    // if (m_qwSegmentLength != -1)
+    // {
+    //     cbBytes = (m_cbBytes < m_qwSegmentLength) ? m_cbBytes : m_qwSegmentLength;
+    //     if ((m_qwSegmentPosition + m_cbBytes) > m_qwSegmentLength)
+    //         cbBytes = m_qwSegmentLength - m_qwSegmentPosition;
+    //     offset = (guint64)m_qwSegmentPosition;
+    // }
 
     // Read data from upstream
-    ret = gst_pad_pull_range(m_pSinkPad, offset, (guint)cbBytes, &buf);
-    if (ret == GST_FLOW_FLUSHING)
+    do
     {
-        // Wait for FX_EVENT_RANGE_READY. It will be send when data available.
-        Lock();
-        m_bWaitForEvent = TRUE;
-        Unlock();
-        return S_OK;
-    }
-    else if (ret == GST_FLOW_OK)
-    {
-        GstMapInfo info;
-        if (!gst_buffer_map(buf, &info, GST_MAP_READ))
+        // Prepare next segment. If we do not have segment info then query it
+        // or if we read entire segment. HLSProgressBuffer will auto switch to
+        // next one, so once we read it just query info for next one.
+        if (m_qwLength == -1 && (m_qwSegmentLength == -1 || m_qwSegmentPosition >= m_qwSegmentLength))
         {
-            // INLINE - gst_buffer_unref()
-            gst_buffer_unref(buf);
-            return E_FAIL;
+            gint64 data_length = 0;
+            if (gst_pad_peer_query_duration(m_pSinkPad, GST_FORMAT_BYTES, &data_length))
+                SetSegmentLength((QWORD)data_length, true);
+            else
+                SetSegmentLength(-1, true);
         }
 
-        memcpy(m_pBytes, info.data, cbBytes);
-
-        gst_buffer_unmap(buf, &info);
-
-        // INLINE - gst_buffer_unref()
-        gst_buffer_unref(buf);
-
-        m_qwPosition += cbBytes;
-        m_qwSegmentPosition += cbBytes;
-
-        if (cbBytes == m_cbBytes)
+        // Lenght is unknown. We assume that we are reading fMP4 (HLS).
+        if (m_qwLength == -1 && m_qwSegmentLength != -1)
         {
-            hr = m_pCallback->Invoke(m_pAsyncResult);
+            if (m_cbBytesRead < m_cbBytes)
+                cbBytes = m_cbBytes - m_cbBytesRead;
+            else
+                return CompleteReadData(E_FAIL);
+
+            offset = (guint64)m_qwSegmentPosition;
+        }
+
+        ret = gst_pad_pull_range(m_pSinkPad, offset, (guint)cbBytes, &buf);
+        if (ret == GST_FLOW_FLUSHING)
+        {
+            // Wait for FX_EVENT_RANGE_READY. It will be send when data available.
+            return PrepareWaitForData();
+        }
+        else if (ret == GST_FLOW_OK)
+        {
+            hr = PushDataBuffer(buf);
+            if (SUCCEEDED(hr) && m_cbBytesRead == m_cbBytes)
+                return CompleteReadData(S_OK);
+            else if (FAILED(hr))
+                return CompleteReadData(E_FAIL);
         }
         else
         {
-            m_cbBytesRead = cbBytes;
-            m_pBytes += cbBytes;
+            return CompleteReadData(E_FAIL);
         }
-    }
-    else
-    {
-        m_cbBytes = 0;
-        hr = m_pCallback->Invoke(m_pAsyncResult);
-    }
+    } while (SUCCEEDED(hr) && m_cbBytesRead < m_cbBytes);
 
     return hr;
+}
+
+HRESULT CGSTMFByteStream::PushDataBuffer(GstBuffer* pBuffer)
+{
+    HRESULT hr = S_OK;
+
+    if (pBuffer == NULL)
+        return E_POINTER;
+
+    GstMapInfo info;
+    gboolean unmap = FALSE;
+    if (gst_buffer_map(pBuffer, &info, GST_MAP_READ))
+        unmap = TRUE;
+    else
+        hr = E_FAIL;
+
+    if (SUCCEEDED(hr) && m_cbBytesRead >= m_cbBytes)
+        hr = E_FAIL;
+
+    if (SUCCEEDED(hr) && (m_cbBytes - m_cbBytesRead) < info.size)
+        hr = E_FAIL;
+
+    if (SUCCEEDED(hr) &&
+            memcpy_s(m_pBytes + m_cbBytesRead, m_cbBytes - m_cbBytesRead,
+                    info.data, info.size) != 0)
+    {
+        hr = E_FAIL;
+    }
+
+    if (SUCCEEDED(hr))
+    {
+        m_cbBytesRead += info.size;
+        m_qwPosition += info.size;
+        m_qwSegmentPosition += info.size;
+    }
+
+    if (unmap)
+        gst_buffer_unmap(pBuffer, &info);
+
+    // INLINE - gst_buffer_unref()
+    gst_buffer_unref(pBuffer);
+
+    return hr;
+}
+
+HRESULT CGSTMFByteStream::CompleteReadData(HRESULT hr)
+{
+    m_readResult = hr;
+    if (m_pCallback && m_pAsyncResult)
+        return m_pCallback->Invoke(m_pAsyncResult);
+
+    return S_OK;
+}
+
+HRESULT CGSTMFByteStream::PrepareWaitForData()
+{
+    Lock();
+    m_bWaitForEvent = TRUE;
+    Unlock();
+
+    // In HLS mode prepare for next segment
+    if (m_qwLength == -1)
+    {
+        m_qwSegmentLength = -1;
+        m_qwSegmentPosition = 0;
+    }
+
+    return S_OK;
 }
 
 void CGSTMFByteStream::Lock()

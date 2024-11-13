@@ -38,7 +38,7 @@
 
 #include "fxplugins_common.h"
 
-#define PTS_DEBUG 1
+#define PTS_DEBUG 0
 #define MEDIA_FORMAT_DEBUG 0
 
 enum

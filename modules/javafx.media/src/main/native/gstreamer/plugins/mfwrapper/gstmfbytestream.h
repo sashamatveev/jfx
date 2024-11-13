@@ -38,7 +38,8 @@ public:
     ~CGSTMFByteStream();
 
     HRESULT ReadRangeAvailable();
-    void SetSegmentLength(QWORD qwSegmentLength);
+    void SetSegmentLength(QWORD qwSegmentLength, bool bForce);
+    bool IsSeekSupported();
 
     // IMFByteStream
     HRESULT BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback, IUnknown *punkState);
@@ -64,6 +65,9 @@ public:
 
 private:
     HRESULT ReadData();
+    HRESULT PushDataBuffer(GstBuffer *pBuffer);
+    HRESULT CompleteReadData(HRESULT hr);
+    HRESULT PrepareWaitForData();
 
     void Lock();
     void Unlock();
@@ -76,12 +80,18 @@ private:
     QWORD m_qwSegmentPosition;
     QWORD m_qwSegmentLength;
 
-    // Read
+    // Pointer to store read bytes
     BYTE *m_pBytes;
+    // Total number of bytes requested
     ULONG m_cbBytes;
+    // Bytes read and stored in m_pBytes
     ULONG m_cbBytesRead;
+    // Completion callback and result
     IMFAsyncCallback *m_pCallback;
     IMFAsyncResult   *m_pAsyncResult;
+    // Read result
+    HRESULT m_readResult;
+
     BOOL m_bWaitForEvent;
 
     CRITICAL_SECTION m_csLock;
