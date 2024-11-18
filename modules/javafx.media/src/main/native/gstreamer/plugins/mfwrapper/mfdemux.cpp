@@ -375,20 +375,26 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     break;
     case GST_EVENT_FLUSH_START:
     {
-        demux->is_flushing = TRUE;
+        // INLINE - gst_event_unref()
+        gst_event_unref(event);
+        ret = TRUE;
+        // demux->is_flushing = TRUE;
 
-        ret = mfdemux_push_sink_event(demux, event);
+        // ret = mfdemux_push_sink_event(demux, event);
     }
     break;
     case GST_EVENT_FLUSH_STOP:
     {
+        // INLINE - gst_event_unref()
+        gst_event_unref(event);
+        ret = TRUE;
         // demux->pDecoder->ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
         // if (demux->pColorConvert)
         //     demux->pColorConvert->ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
 
-        ret = mfdemux_push_sink_event(demux, event);
+        // ret = mfdemux_push_sink_event(demux, event);
 
-        demux->is_flushing = FALSE;
+        // demux->is_flushing = FALSE;
     }
     break;
     case GST_EVENT_EOS:
@@ -573,18 +579,23 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                     demux->rate = rate;
                     demux->seek_position = start;
                     demux->send_new_segment = TRUE;
+
+                    PROPVARIANT pv = { 0 };
+                    pv.vt = VT_I8;
+                    pv.hVal.QuadPart = (LONGLONG)(start / 100);
+                    hr = demux->pSourceReader->SetCurrentPosition(GUID_NULL, pv);
+                    // TODO handle error
+                    PropVariantClear(&pv);
                 }
                 else
                 {
                     demux->pGSTMFByteStream->SetSegmentLength(-1, true);
                     ret = gst_pad_push_event(demux->sink_pad, event);
-                }
 
-                if (demux->pSourceReader != NULL)
-                {
                     PROPVARIANT pv = { 0 };
                     pv.vt = VT_I8;
-                    pv.hVal.QuadPart = (LONGLONG)(start / 100);
+                    //pv.hVal.QuadPart = (LONGLONG)(start / 100);
+                    pv.hVal.QuadPart = (LONGLONG)(0);
                     hr = demux->pSourceReader->SetCurrentPosition(GUID_NULL, pv);
                     // TODO handle error
                     PropVariantClear(&pv);
@@ -1174,9 +1185,15 @@ static void mfdemux_loop(GstPad * pad)
     if (hr == S_OK)
     {
         if (dwActualStreamIndex == 0)
+        {
+            g_print("AMDEBUG mfdemux_loop() Audio sample %lld (%p)\n", llTimestamp, pSample);
             src_pad = demux->audio_src_pad;
+        }
         else if (dwActualStreamIndex == 1)
+        {
+            g_print("AMDEBUG mfdemux_loop() Video sample %lld (%p)\n", llTimestamp, pSample);
             src_pad = demux->video_src_pad;
+        }
     }
 
     if (hr == S_OK && src_pad != NULL && pSample != NULL)
@@ -1184,7 +1201,9 @@ static void mfdemux_loop(GstPad * pad)
         if (src_pad != NULL)
             result = mfdemux_deliver_sample(demux, src_pad, pSample);
         if (result != GST_FLOW_OK)
-            result = result;
+        {
+            g_print("AMDEBUG mfdemux_deliver_sample() failed with %d\n", result);
+        }
 
         SafeRelease(&pSample);
     }

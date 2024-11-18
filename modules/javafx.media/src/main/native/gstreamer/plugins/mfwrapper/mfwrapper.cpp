@@ -38,7 +38,7 @@
 
 #include "fxplugins_common.h"
 
-#define PTS_DEBUG 0
+#define PTS_DEBUG 1
 #define MEDIA_FORMAT_DEBUG 0
 
 enum
@@ -1246,6 +1246,10 @@ static gint mfwrapper_process_output(GstMFWrapper *decoder)
                 ret = mfwrapper_deliver_sample(decoder, decoder->pDecoderOutput);
             }
         }
+    }
+    else
+    {
+        hr = hr;
     }
 
     if (decoder->is_eos || decoder->is_flushing || ret != GST_FLOW_OK)

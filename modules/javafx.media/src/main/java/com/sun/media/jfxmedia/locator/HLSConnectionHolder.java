@@ -187,6 +187,9 @@ final class HLSConnectionHolder extends ConnectionHolder {
             // be in sync.
             return (long) (audioPosition * HLS_VALUE_FLOAT_MULTIPLIER);
         } else {
+            // if (currentPlaylist.isFragmentedMP4()) {
+            //     sendHeader = true;
+            // }
             return (long) (currentPlaylist.seek(position) * HLS_VALUE_FLOAT_MULTIPLIER);
         }
     }

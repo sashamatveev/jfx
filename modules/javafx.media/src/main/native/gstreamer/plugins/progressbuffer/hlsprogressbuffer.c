@@ -539,6 +539,14 @@ static GstFlowReturn hls_progress_buffer_getrange(GstPad *pad, GstObject *parent
         result = cache_read_buffer_from_position2(
                 element->cache[element->cache_read_index], start_position,
                 size, buffer);
+
+        if (element->cache_discont[element->cache_read_index] &&
+                result == GST_FLOW_OK && (*buffer) != NULL)
+        {
+            *buffer = gst_buffer_make_writable(*buffer);
+            GST_BUFFER_FLAG_SET(*buffer, GST_BUFFER_FLAG_DISCONT);
+            element->cache_discont[element->cache_read_index] = FALSE;
+        }
     }
 
     // Check if we still has something to read. If no signal that we done with
@@ -718,7 +726,7 @@ static gboolean hls_progress_buffer_sink_event(GstPad *pad, GstObject *parent, G
         ret = gst_pad_push_event(element->srcpad, event);
         hls_progress_buffer_flush_data(element);
 
-        if (gst_pad_is_linked(element->srcpad))
+        if (!element->is_pull_mode && gst_pad_is_linked(element->srcpad))
             gst_pad_pause_task(element->srcpad);
 
         break;
@@ -731,7 +739,7 @@ static gboolean hls_progress_buffer_sink_event(GstPad *pad, GstObject *parent, G
         element->is_flushing = FALSE;
         element->srcresult = GST_FLOW_OK;
 
-        if (!!element->is_pull_mode && !element->is_eos && gst_pad_is_linked(element->srcpad))
+        if (!element->is_pull_mode && !element->is_eos && gst_pad_is_linked(element->srcpad))
             gst_pad_start_task(element->srcpad, hls_progress_buffer_loop, element, NULL);
 
         g_mutex_unlock(&element->lock);
