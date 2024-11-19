@@ -673,30 +673,56 @@ static gboolean mfdemux_init_demux(GstMFDemux *demux, GstCaps *caps)
     return TRUE;
 }
 
-static UINT32 mfdemux_adjust_codec_data_blob(GstMFDemux *demux, UINT8 *pBlobBytes, UINT32 cbBlobSize, JFX_CODEC_ID codecID)
+static gboolean mfdemux_extract_codec_data(GstMFDemux *demux, JFX_CODEC_ID codecID,
+                                           UINT8 *pBlobBytes, UINT32 cbBlobSize,
+                                           UINT8 *pCodecData, UINT32 *cbCodecDataSize)
 {
-    // For AAC header we need to remove 0x00 padding before header.
-    // Header itself is 2 bytes. Not sure why MF adds padding, but
-    // DirectShow does not like it.
-    if (codecID == JFX_CODEC_ID_AAC && cbBlobSize > 2)
+    if (demux == NULL)
+        return false;
+    if (pBlobBytes == NULL || cbBlobSize <= 0)
+        return false;
+    if (pCodecData == NULL || cbCodecDataSize == NULL)
+        return false;
+    if ((*cbCodecDataSize) != MAX_CODEC_DATA_SIZE)
+        return false;
+
+    // For AAC blob is HEAACWAVEFORMAT follow by AudioSpecificConfig() data or
+    // AudioSpecificConfig() data. AudioSpecificConfig() data at least 2 bytes.
+    if (codecID == JFX_CODEC_ID_AAC && cbBlobSize >= 2)
     {
-        UINT32 pos = 0;
-        while (cbBlobSize >= 2)
+        if (cbBlobSize > sizeof(HEAACWAVEFORMAT))
         {
-            if (pBlobBytes[pos] == 0x00)
+            HEAACWAVEFORMAT *pFormat = (HEAACWAVEFORMAT*)pBlobBytes;
+            // From doc wStructType should be 0
+            if (pFormat->wfInfo.wStructType == 0)
             {
-                pos++;
-                cbBlobSize--;
-            }
-            else
-            {
-                memcpy_s(pBlobBytes, cbBlobSize, &pBlobBytes[pos], cbBlobSize);
-                break;
+                // From doc we need to use wfInfo.wfx.cbSize to figure out
+                // size of AudioSpecificConfig() data follow HEAACWAVEFORMAT.
+                if (pFormat->wfInfo.wfx.cbSize > 0)
+                {
+                    // Make sure we have enough space in destination buffer
+                    if (pFormat->wfInfo.wfx.cbSize > (*cbCodecDataSize))
+                        return false;
+
+                    // Make sure we have enough data in source buffer
+                    if (pFormat->wfInfo.wfx.cbSize >= cbBlobSize)
+                        return false;
+
+                    if ((sizeof(HEAACWAVEFORMAT) + pFormat->wfInfo.wfx.cbSize) >= cbBlobSize)
+                        return false;
+
+                    memcpy(pCodecData, pBlobBytes + sizeof(HEAACWAVEFORMAT),
+                            pFormat->wfInfo.wfx.cbSize);
+                }
             }
         }
     }
+    else
+    {
+        return false;
+    }
 
-    return cbBlobSize;
+    return true;
 }
 
 // If codec_data not available or fail to read, then codec_data will be set to NULL.
@@ -706,6 +732,8 @@ static void mfdemux_get_codec_data(GstMFDemux *demux, const GUID &guidKey,
 {
     UINT32 cbBlobSize = 0;
     UINT8 blobBytes[MAX_CODEC_DATA_SIZE] = {0};
+    UINT32 cbCodecDataSize = MAX_CODEC_DATA_SIZE;
+    UINT8 codecDataBytes[MAX_CODEC_DATA_SIZE] = {0};
 
     if (pMediaType == NULL)
         return;
@@ -715,17 +743,21 @@ static void mfdemux_get_codec_data(GstMFDemux *demux, const GUID &guidKey,
     {
         hr = pMediaType->GetBlob(guidKey, &blobBytes[0], cbBlobSize, NULL);
         if (SUCCEEDED(hr))
-            cbBlobSize = mfdemux_adjust_codec_data_blob(demux, &blobBytes[0], cbBlobSize, codecID);
+        {
+            if (!mfdemux_extract_codec_data(demux, codecID,
+                    &blobBytes[0], cbBlobSize, &codecDataBytes[0], &cbCodecDataSize))
+                return;
+        }
 
         if (SUCCEEDED(hr))
-            (*codec_data) = gst_buffer_new_allocate(NULL, (gsize)cbBlobSize, NULL);
+            (*codec_data) = gst_buffer_new_allocate(NULL, (gsize)cbCodecDataSize, NULL);
 
         if ((*codec_data) != NULL)
         {
             GstMapInfo info;
             if (gst_buffer_map((*codec_data), &info, GST_MAP_READWRITE))
             {
-                if (memcpy_s(info.data, info.maxsize, &blobBytes[0], cbBlobSize) != 0)
+                if (memcpy_s(info.data, info.maxsize, &codecDataBytes[0], cbCodecDataSize) != 0)
                     hr = E_FAIL;
 
                 gst_buffer_unmap((*codec_data), &info);

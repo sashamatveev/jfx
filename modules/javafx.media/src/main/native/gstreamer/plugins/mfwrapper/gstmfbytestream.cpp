@@ -271,6 +271,7 @@ HRESULT CGSTMFByteStream::SetCurrentPosition(QWORD qwPosition)
     if (m_qwPosition == qwPosition)
         return S_OK;
 
+    //
     if (m_qwLength != -1)
     {
         m_qwPosition = qwPosition;
@@ -385,16 +386,18 @@ HRESULT CGSTMFByteStream::ReadData()
                 SetSegmentLength(-1, true);
         }
 
+        if (m_cbBytesRead < m_cbBytes)
+            cbBytes = m_cbBytes - m_cbBytesRead;
+        else
+            return CompleteReadData(E_FAIL);
+
         // Lenght is unknown. We assume that we are reading fMP4 (HLS).
         if (m_qwLength == -1 && m_qwSegmentLength != -1)
-        {
-            if (m_cbBytesRead < m_cbBytes)
-                cbBytes = m_cbBytes - m_cbBytesRead;
-            else
-                return CompleteReadData(E_FAIL);
-
             offset = (guint64)m_qwSegmentPosition;
-        }
+        else if (m_qwLength != -1)
+            offset = (guint64)m_qwPosition;
+        else
+            return CompleteReadData(E_FAIL);
 
         ret = gst_pad_pull_range(m_pSinkPad, offset, (guint)cbBytes, &buf);
         if (ret == GST_FLOW_FLUSHING)
