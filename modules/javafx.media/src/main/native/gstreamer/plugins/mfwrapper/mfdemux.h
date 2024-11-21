@@ -105,6 +105,9 @@ struct _GstMFDemux
 
     GstPad *audio_src_pad;
     GstPad *video_src_pad;
+
+    DWORD audio_stream_index;
+    DWORD video_stream_index;
 };
 
 struct _GstMFDemuxClass

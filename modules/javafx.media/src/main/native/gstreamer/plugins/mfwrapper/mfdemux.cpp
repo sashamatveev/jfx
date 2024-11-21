@@ -44,22 +44,6 @@
 using namespace std;
 
 #define MAX_CODEC_DATA_SIZE 256
-//#define PTS_DEBUG 0
-
-// enum
-// {
-//     PROP_0,
-//     PROP_CODEC_ID,
-//     PROP_IS_SUPPORTED,
-// };
-
-// enum
-// {
-//     PO_DELIVERED,
-//     PO_NEED_MORE_DATA,
-//     PO_FLUSHING,
-//     PO_FAILED,
-// };
 
 GST_DEBUG_CATEGORY_STATIC(gst_mfdemux_debug);
 #define GST_CAT_DEFAULT gst_mfdemux_debug
@@ -239,6 +223,9 @@ static void gst_mfdemux_init(GstMFDemux *demux)
 
     demux->audio_src_pad = NULL;
     demux->video_src_pad = NULL;
+
+    demux->audio_stream_index = -1;
+    demux->video_stream_index = -1;
 
     // Initialize Media Foundation
     bool bCallCoUninitialize = true;
@@ -673,6 +660,11 @@ static gboolean mfdemux_init_demux(GstMFDemux *demux, GstCaps *caps)
     return TRUE;
 }
 
+// JFX_CODEC_ID_AAC (MFAudioFormat_AAC):
+// From https://learn.microsoft.com/en-us/windows/win32/medfound/aac-media-types
+// pBlobBytes contains the portion of the HEAACWAVEINFO structure that appears after
+// the WAVEFORMATEX structure (that is, after the wfx member).
+// This is followed by the AudioSpecificConfig() data, as defined by ISO/IEC 14496-3.
 static gboolean mfdemux_extract_codec_data(GstMFDemux *demux, JFX_CODEC_ID codecID,
                                            UINT8 *pBlobBytes, UINT32 cbBlobSize,
                                            UINT8 *pCodecData, UINT32 *cbCodecDataSize)
@@ -686,36 +678,17 @@ static gboolean mfdemux_extract_codec_data(GstMFDemux *demux, JFX_CODEC_ID codec
     if ((*cbCodecDataSize) != MAX_CODEC_DATA_SIZE)
         return false;
 
-    // For AAC blob is HEAACWAVEFORMAT follow by AudioSpecificConfig() data or
-    // AudioSpecificConfig() data. AudioSpecificConfig() data at least 2 bytes.
-    if (codecID == JFX_CODEC_ID_AAC && cbBlobSize >= 2)
+    if (codecID == JFX_CODEC_ID_AAC &&
+        cbBlobSize > (sizeof(HEAACWAVEINFO) - sizeof(WAVEFORMATEX)))
     {
-        if (cbBlobSize > sizeof(HEAACWAVEFORMAT))
-        {
-            HEAACWAVEFORMAT *pFormat = (HEAACWAVEFORMAT*)pBlobBytes;
-            // From doc wStructType should be 0
-            if (pFormat->wfInfo.wStructType == 0)
-            {
-                // From doc we need to use wfInfo.wfx.cbSize to figure out
-                // size of AudioSpecificConfig() data follow HEAACWAVEFORMAT.
-                if (pFormat->wfInfo.wfx.cbSize > 0)
-                {
-                    // Make sure we have enough space in destination buffer
-                    if (pFormat->wfInfo.wfx.cbSize > (*cbCodecDataSize))
-                        return false;
+        DWORD offset = sizeof(HEAACWAVEINFO) - sizeof(WAVEFORMATEX);
 
-                    // Make sure we have enough data in source buffer
-                    if (pFormat->wfInfo.wfx.cbSize >= cbBlobSize)
-                        return false;
+        if ((*cbCodecDataSize) >= (cbBlobSize - offset))
+            (*cbCodecDataSize) = cbBlobSize - offset;
+        else
+            return false; // Not enough space in pCodecData buffer
 
-                    if ((sizeof(HEAACWAVEFORMAT) + pFormat->wfInfo.wfx.cbSize) >= cbBlobSize)
-                        return false;
-
-                    memcpy(pCodecData, pBlobBytes + sizeof(HEAACWAVEFORMAT),
-                            pFormat->wfInfo.wfx.cbSize);
-                }
-            }
-        }
+        memcpy(pCodecData, pBlobBytes + offset, (*cbCodecDataSize));
     }
     else
     {
@@ -726,7 +699,7 @@ static gboolean mfdemux_extract_codec_data(GstMFDemux *demux, JFX_CODEC_ID codec
 }
 
 // If codec_data not available or fail to read, then codec_data will be set to NULL.
-// We will attempt to playback anyway.
+// We will attempt to playback media stream without codec data anyway.
 static void mfdemux_get_codec_data(GstMFDemux *demux, const GUID &guidKey,
                                    IMFMediaType *pMediaType, GstBuffer **codec_data, JFX_CODEC_ID codecID)
 {
@@ -1169,6 +1142,36 @@ static GstFlowReturn mfdemux_deliver_sample(GstMFDemux *demux, GstPad* pad,
     return ret;
 }
 
+static GstPad* mfdemux_get_src_pad(GstMFDemux *demux, DWORD index)
+{
+    if (demux->audio_stream_index == index)
+        return demux->audio_src_pad;
+    else if (demux->video_stream_index == index)
+        return demux->video_src_pad;
+
+    // We probbaly do not know yet index -> src_pad mapping.
+    IMFMediaType *pMediaType = NULL;
+    HRESULT hr = demux->pSourceReader->GetCurrentMediaType(index, &pMediaType);
+    if (SUCCEEDED(hr) && pMediaType != NULL)
+    {
+        GUID guidMajorType;
+        hr = pMediaType->GetMajorType(&guidMajorType);
+        SafeRelease(&pMediaType);
+        if (SUCCEEDED(hr) && IsEqualGUID(guidMajorType, MFMediaType_Audio))
+        {
+            demux->audio_stream_index = index;
+            return demux->audio_src_pad;
+        }
+        else if (SUCCEEDED(hr) && IsEqualGUID(guidMajorType, MFMediaType_Video))
+        {
+            demux->video_stream_index = index;
+            return demux->video_src_pad;
+        }
+    }
+
+    return NULL;
+}
+
 static void mfdemux_loop(GstPad * pad)
 {
     GstMFDemux *demux = GST_MFDEMUX(GST_PAD_PARENT(pad));
@@ -1213,23 +1216,9 @@ static void mfdemux_loop(GstPad * pad)
                                                 &llTimestamp,
                                                 &pSample);
     GST_PAD_STREAM_LOCK(pad);
-    GstPad *src_pad = NULL;
-    if (hr == S_OK)
+    if (hr == S_OK && pSample != NULL)
     {
-        if (dwActualStreamIndex == 0)
-        {
-            g_print("AMDEBUG mfdemux_loop() Audio sample %lld (%p)\n", llTimestamp, pSample);
-            src_pad = demux->audio_src_pad;
-        }
-        else if (dwActualStreamIndex == 1)
-        {
-            g_print("AMDEBUG mfdemux_loop() Video sample %lld (%p)\n", llTimestamp, pSample);
-            src_pad = demux->video_src_pad;
-        }
-    }
-
-    if (hr == S_OK && src_pad != NULL && pSample != NULL)
-    {
+        GstPad *src_pad = mfdemux_get_src_pad(demux, dwActualStreamIndex);
         if (src_pad != NULL)
             result = mfdemux_deliver_sample(demux, src_pad, pSample);
         if (result != GST_FLOW_OK)
