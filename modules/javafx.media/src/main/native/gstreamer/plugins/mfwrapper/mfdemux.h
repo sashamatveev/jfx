@@ -108,6 +108,8 @@ struct _GstMFDemux
 
     DWORD audio_stream_index;
     DWORD video_stream_index;
+
+    GstEvent *cached_segment_event;
 };
 
 struct _GstMFDemuxClass

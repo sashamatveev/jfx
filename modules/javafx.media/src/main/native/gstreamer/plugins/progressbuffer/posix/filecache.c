@@ -132,31 +132,31 @@ gint64 cache_read_buffer(Cache* cache, GstBuffer** buffer)
     return 0;
 }
 
-GstFlowReturn cache_read_buffer_from_position(Cache* cache, gint64 start_position, guint size, GstBuffer** buffer)
+GstFlowReturn cache_read_buffer_from_position(Cache *cache, gint64 start_position, guint size, GstBuffer **buffer)
 {
     GstFlowReturn result = GST_FLOW_ERROR;
     *buffer = NULL;
 
     if (cache_set_read_position(cache, start_position))
     {
-        guint8 *data = (guint8*)g_try_malloc(size);
+        guint8 *data = (guint8 *)g_try_malloc(size);
         if (data)
-    {
-        ssize_t read_bytes = read(cache->readHandle, data, size);
+        {
+            ssize_t read_bytes = read(cache->readHandle, data, size);
             if (read_bytes == size)
             {
                 *buffer = gst_buffer_new_wrapped_full(0, data, size, 0, read_bytes, data, g_free);
                 if (*buffer != NULL)
                 {
                     GST_BUFFER_OFFSET(*buffer) = cache->read_position;
+                    // Adjust read position, only if we returning valid buffer.
+                    cache->read_position += read_bytes;
                     result = GST_FLOW_OK;
                 }
             }
             else
-            g_free(data); // Wrong size, deleting buffer to avoid leaking.
-
-            cache->read_position += read_bytes;
-    }
+                g_free(data); // Wrong size, deleting buffer to avoid leaking.
+        }
     }
     return result;
 }
@@ -210,6 +210,14 @@ gboolean cache_set_read_position(Cache* cache, gint64 position)
 gboolean cache_has_enough_data(Cache* cache)
 {
     return cache->read_position < cache->write_position;
+}
+
+gboolean cache_has_enough_data2(Cache* cache, guint64 read_position, guint size)
+{
+    if ((read_position + size) <= cache->write_position)
+        return TRUE;
+
+    return FALSE;
 }
 
 gint64 cache_bytes_available(Cache* cache)

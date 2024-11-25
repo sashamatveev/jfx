@@ -190,6 +190,7 @@ static void gst_mfwrapper_init(GstMFWrapper *decoder)
     decoder->is_eos_received = FALSE;
     decoder->is_eos = FALSE;
     decoder->is_decoder_initialized = FALSE;
+    decoder->is_decoder_error = FALSE;
     decoder->force_discontinuity = FALSE;
     decoder->force_output_discontinuity = FALSE;
 
@@ -1249,7 +1250,11 @@ static gint mfwrapper_process_output(GstMFWrapper *decoder)
     }
     else
     {
-        hr = hr;
+        decoder->is_decoder_error = TRUE;
+        gst_element_message_full(GST_ELEMENT(decoder), GST_MESSAGE_ERROR,
+                GST_STREAM_ERROR, GST_STREAM_ERROR_DECODE,
+                g_strdup_printf("Failed to decode stream (0x%X)", hr), NULL,
+                ("mfwrapper.c"), ("mfwrapper_process_output"), 0);
     }
 
     if (decoder->is_eos || decoder->is_flushing || ret != GST_FLOW_OK)
@@ -1263,7 +1268,6 @@ static gint mfwrapper_process_output(GstMFWrapper *decoder)
 // Processes input buffers
 static GstFlowReturn mfwrapper_chain(GstPad *pad, GstObject *parent, GstBuffer *buf)
 {
-    GstFlowReturn ret = GST_FLOW_OK;
     GstMFWrapper *decoder = GST_MFWRAPPER(parent);
 
     if (decoder->is_flushing || decoder->is_eos_received)
@@ -1277,13 +1281,13 @@ static GstFlowReturn mfwrapper_chain(GstPad *pad, GstObject *parent, GstBuffer *
         return GST_FLOW_FLUSHING;
 
     gint po_ret = mfwrapper_process_output(decoder);
-    if (po_ret != PO_DELIVERED && po_ret != PO_NEED_MORE_DATA)
+    if (po_ret == PO_FAILED)
+        return GST_FLOW_ERROR;
+
+    if (po_ret == PO_FLUSHING || decoder->is_flushing)
         return GST_FLOW_FLUSHING;
 
-    if (decoder->is_flushing)
-        return GST_FLOW_FLUSHING;
-
-    return ret;
+    return GST_FLOW_OK;
 }
 
 static gboolean mfwrapper_push_sink_event(GstMFWrapper *decoder, GstEvent *event)
@@ -1324,13 +1328,17 @@ static gboolean mfwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent *e
     break;
     case GST_EVENT_FLUSH_STOP:
     {
-        decoder->pDecoder->ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
-        for (int i = 0; i < MAX_COLOR_CONVERT; i++)
+        if (!decoder->is_decoder_error)
         {
-            if (decoder->pColorConvert[i])
+            decoder->pDecoder->
+                    ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
+            for (int i = 0; i < MAX_COLOR_CONVERT; i++)
             {
-                decoder->pColorConvert[i]->
-                        ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
+                if (decoder->pColorConvert[i])
+                {
+                    decoder->pColorConvert[i]->
+                            ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
+                }
             }
         }
 
@@ -1343,33 +1351,36 @@ static gboolean mfwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent *e
     {
         decoder->is_eos_received = TRUE;
 
-        // Let decoder know that we got end of stream
-        hr = decoder->pDecoder->
-                ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0);
-
-        // Ask decoder to produce all remaining data
-        if (SUCCEEDED(hr))
+        if (!decoder->is_decoder_error)
         {
-            decoder->pDecoder->
-                    ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0);
-        }
+            // Let decoder know that we got end of stream
+            hr = decoder->pDecoder->
+                    ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0);
 
-        // Deliver remaining data
-        gint po_ret;
-        do
-        {
-            po_ret = mfwrapper_process_output(decoder);
-        } while (po_ret == PO_DELIVERED);
-
-        for (int i = 0; i < MAX_COLOR_CONVERT; i++)
-        {
-            if (decoder->pColorConvert[i])
+            // Ask decoder to produce all remaining data
+            if (SUCCEEDED(hr))
             {
-                hr = decoder->pColorConvert[i]->
-                        ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0);
-                if (SUCCEEDED(hr))
+                decoder->pDecoder->
+                        ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0);
+            }
+
+            // Deliver remaining data
+            gint po_ret;
+            do
+            {
+                po_ret = mfwrapper_process_output(decoder);
+            } while (po_ret == PO_DELIVERED);
+
+            for (int i = 0; i < MAX_COLOR_CONVERT; i++)
+            {
+                if (decoder->pColorConvert[i])
+                {
                     hr = decoder->pColorConvert[i]->
-                            ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
+                            ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0);
+                    if (SUCCEEDED(hr))
+                        hr = decoder->pColorConvert[i]->
+                                ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
+                }
             }
         }
 

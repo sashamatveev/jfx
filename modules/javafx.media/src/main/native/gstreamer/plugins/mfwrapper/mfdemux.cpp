@@ -197,7 +197,7 @@ static void gst_mfdemux_init(GstMFDemux *demux)
     demux->is_eos = FALSE;
     demux->is_demux_initialized = FALSE;
     demux->force_discontinuity = FALSE;
-    demux->send_new_segment = TRUE;
+    demux->send_new_segment = FALSE;
     // demux->force_output_discontinuity = FALSE;
 
     demux->rate = 1.0;
@@ -226,6 +226,8 @@ static void gst_mfdemux_init(GstMFDemux *demux)
 
     demux->audio_stream_index = -1;
     demux->video_stream_index = -1;
+
+    demux->cached_segment_event = NULL;
 
     // Initialize Media Foundation
     bool bCallCoUninitialize = true;
@@ -280,6 +282,13 @@ static void gst_mfdemux_dispose(GObject* object)
         // INLINE - gst_buffer_unref()
         gst_buffer_unref(demux->videoFormat.codec_data);
         demux->videoFormat.codec_data = NULL;
+    }
+
+    if (demux->cached_segment_event != NULL)
+    {
+        // INLINE - gst_event_unref()
+        gst_event_unref(demux->cached_segment_event);
+        demux->cached_segment_event = NULL;
     }
 
     if (demux->hr_mfstartup == S_OK)
@@ -357,7 +366,17 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
         demux->is_eos_received = FALSE;
         demux->is_eos = FALSE;
 
-        ret = mfdemux_push_sink_event(demux, event);
+        // Cache segment event if we not ready yet
+        if ((demux->audio_src_pad != NULL && gst_pad_is_linked(demux->audio_src_pad)) ||
+            (demux->video_src_pad != NULL && gst_pad_is_linked(demux->video_src_pad)))
+        {
+            ret = mfdemux_push_sink_event(demux, event);
+        }
+        else
+        {
+            demux->cached_segment_event = event;
+            ret = TRUE;
+        }
     }
     break;
     case GST_EVENT_FLUSH_START:
@@ -388,6 +407,9 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     {
         demux->is_eos_received = TRUE;
 
+        if (demux->pGSTMFByteStream)
+            demux->pGSTMFByteStream->SetIsEOS();
+
         // // Let demux know that we got end of stream
         // hr = demux->pDecoder->ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0);
 
@@ -409,10 +431,11 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
         //         hr = demux->pColorConvert->ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
         // }
 
-        // We done pushing all frames. Deliver EOS.
-        ret = mfdemux_push_sink_event(demux, event);
-
         demux->is_eos = TRUE;
+
+        // INLINE - gst_event_unref()
+        gst_event_unref(event);
+        ret = TRUE;
     }
     break;
     case GST_EVENT_CAPS:
@@ -530,6 +553,16 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
             if (demux->pGSTMFByteStream == NULL || demux->pSourceReader == NULL)
                 return FALSE; // Something wrong, but unlikely.
 
+            // Do not init seek if we in error state. It can happen if
+            // critical error occured and we disposing pipeline.
+            g_mutex_lock(&demux->lock);
+            if (demux->src_result == GST_FLOW_ERROR)
+            {
+                g_mutex_unlock(&demux->lock);
+                return FALSE;
+            }
+            g_mutex_unlock(&demux->lock);
+
             // Get seek description from the event.
             gst_event_parse_seek (event, &rate, &format, &flags,
                     &start_type, &start, &stop_type, &stop);
@@ -626,6 +659,9 @@ static gboolean mfdemux_init_demux(GstMFDemux *demux, GstCaps *caps)
     gint64 data_length = 0;
     if (!gst_pad_peer_query_duration(demux->sink_pad, GST_FORMAT_BYTES, &data_length))
         data_length = -1; // -1 if unknown for MF (QWORD is ULONGLONG)
+    else
+        demux->send_new_segment = TRUE; // Lenght is know, which means it is
+        // HTTP/FILE, so we need to provide segment. HLS will send it is own.
 
     demux->pGSTMFByteStream = new (nothrow) CGSTMFByteStream((QWORD)data_length, demux->sink_pad);
     if (demux->pGSTMFByteStream == NULL)
@@ -962,6 +998,12 @@ static gboolean mfdemux_configure_video_src_caps(GstMFDemux *demux)
     if (caps == NULL)
         return FALSE;
 
+    if (!demux->pGSTMFByteStream->IsSeekSupported())
+    {
+        gst_caps_set_simple(caps, "fragmented", G_TYPE_BOOLEAN,
+                            TRUE, NULL);
+    }
+
     if (demux->videoFormat.codec_data)
         gst_caps_set_simple(caps, "codec_data", GST_TYPE_BUFFER,
                             demux->videoFormat.codec_data, NULL);
@@ -1124,6 +1166,11 @@ static GstFlowReturn mfdemux_deliver_sample(GstMFDemux *demux, GstPad* pad,
     {
         mfdemux_send_new_segment(demux, GST_BUFFER_TIMESTAMP(pBuffer));
         demux->send_new_segment = FALSE;
+    }
+    else if (demux->cached_segment_event != NULL)
+    {
+        mfdemux_push_sink_event(demux, demux->cached_segment_event);
+        demux->cached_segment_event = NULL;
     }
 
     if (SUCCEEDED(hr))
@@ -1305,8 +1352,17 @@ static gboolean mfdemux_activate_mode(GstPad *pad, GstObject *parent, GstPadMode
         else
         {
             g_mutex_lock(&demux->lock);
-            demux->src_result = GST_FLOW_FLUSHING;
+            demux->src_result = GST_FLOW_ERROR;
             g_mutex_unlock(&demux->lock);
+
+            // Lock pad. Streaming thread might be waiting for data, but
+            // it should release stream lock when doing it.
+            GST_PAD_STREAM_LOCK(demux->sink_pad);
+            // Unblock source reader if it was waiting for read.
+            if (demux->pGSTMFByteStream)
+                demux->pGSTMFByteStream->CompleteReadData(S_OK);
+            // Unlock stream lock so streaming thread can continue.
+            GST_PAD_STREAM_UNLOCK(demux->sink_pad);
 
             res = gst_pad_stop_task(pad);
         }

@@ -166,7 +166,6 @@ static gboolean         progress_buffer_src_event(GstPad *pad, GstObject *parent
 static void             progress_buffer_loop(void *data);
 static void             progress_buffer_flush_data(ProgressBuffer *buffer);
 
-static gboolean         progress_buffer_checkgetrange(GstPad *pad);
 static GstFlowReturn    progress_buffer_getrange(GstPad *pad, GstObject *parent, guint64 start_position,
                                                  guint length, GstBuffer **data);
 #if ENABLE_PULL_MODE
@@ -1071,6 +1070,14 @@ static GstFlowReturn progress_buffer_getrange(GstPad *pad, GstObject *parent, gu
 
     g_mutex_lock(&element->lock); // Use one lock for push and pull modes
 
+    if (!cache_has_enough_data2(element->cache, start_position, size))
+    {
+        element->range_start = start_position;
+        element->range_stop = element->range_start + size;
+        g_mutex_unlock(&element->lock);
+        return GST_FLOW_FLUSHING;
+    }
+
     if (element->sink_segment.stop < (gint64)end_position)
         result = GST_FLOW_EOS;
     else if (element->sink_segment.start <= (gint64)start_position &&
@@ -1113,23 +1120,6 @@ static GstFlowReturn progress_buffer_getrange(GstPad *pad, GstObject *parent, gu
 #else
     ProgressBuffer *element = PROGRESS_BUFFER(GST_PAD_PARENT(pad));
     return gst_pad_pull_range(element->sinkpad, parent, start_position, size, buffer);
-#endif
-}
-
-static gboolean progress_buffer_checkgetrange(GstPad *pad)
-{
-    ProgressBuffer *element = PROGRESS_BUFFER(GST_PAD_PARENT(pad));
-#if ENABLE_PULL_MODE
-    gboolean    result = FALSE;
-    GstStructure *s = gst_structure_new(GETRANGE_QUERY_NAME, NULL, NULL);
-    GstQuery *query = gst_query_new_custom(GST_QUERY_CUSTOM, s);
-    if (gst_pad_peer_query(pad, query))
-        result = gst_structure_get_boolean(s, GETRANGE_QUERY_SUPPORTS_FIELDNANE, &result) && result;
-// INLINE - gst_query_unref()
-    gst_query_unref(query);
-    return result;
-#else
-    return gst_pad_check_pull_range(element->sinkpad);
 #endif
 }
 

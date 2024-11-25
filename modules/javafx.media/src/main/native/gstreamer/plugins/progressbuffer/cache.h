@@ -66,8 +66,8 @@ gboolean       cache_set_read_position(Cache* cache, gint64 position);
 // Returns true if the cache has enough data for fluent reading, but we can't expect more than total.
 gboolean       cache_has_enough_data(Cache* cache);
 
-// Returns true if the cache has enough data for fluent reading, but we can't expect more than total.
-gboolean       cache_has_enough_data(Cache* cache);
+// Returns true if the cache has enough data for size bytes.
+gboolean       cache_has_enough_data2(Cache* cache, guint64 read_position, guint size);
 
 // Returns number of bytes available to read or 0 if no bytes left
 gint64         cache_bytes_available(Cache* cache);

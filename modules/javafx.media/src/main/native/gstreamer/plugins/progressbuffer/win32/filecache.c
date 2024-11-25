@@ -140,13 +140,13 @@ GstFlowReturn cache_read_buffer_from_position(Cache* cache, gint64 start_positio
                 if (*buffer != NULL)
                 {
                     GST_BUFFER_OFFSET(*buffer) = cache->read_position;
+                    // Adjust read position, only if we returning valid buffer.
+                    cache->read_position += read;
                     result = GST_FLOW_OK;
                 }
             }
             else
                 g_free(data); // Wrong size, deleting buffer to avoid leaking.
-
-            cache->read_position += read;
         }
         else if (data) // ReadError, deleting buffer to avoid leaking.
             g_free(data);
@@ -210,6 +210,14 @@ gboolean cache_set_read_position(Cache* cache, gint64 position)
 gboolean cache_has_enough_data(Cache* cache)
 {
     return cache->read_position < cache->write_position;
+}
+
+gboolean cache_has_enough_data2(Cache* cache, guint64 read_position, guint size)
+{
+    if ((read_position + size) <= cache->write_position)
+        return TRUE;
+
+    return FALSE;
 }
 
 gint64 cache_bytes_available(Cache* cache)

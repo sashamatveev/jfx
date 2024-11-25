@@ -71,6 +71,9 @@ struct _GstMFWrapper
     gboolean is_eos_received;
     gboolean is_eos;
     gboolean is_decoder_initialized;
+    // If set to true do not call decoder it might hang.
+    // This flag should be set if decoder calls failed.
+    gboolean is_decoder_error;
 
     gboolean force_discontinuity;
     gboolean force_output_discontinuity;

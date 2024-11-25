@@ -40,6 +40,8 @@ public:
     HRESULT ReadRangeAvailable();
     void SetSegmentLength(QWORD qwSegmentLength, bool bForce);
     bool IsSeekSupported();
+    HRESULT CompleteReadData(HRESULT hr);
+    void SetIsEOS();
 
     // IMFByteStream
     HRESULT BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback, IUnknown *punkState);
@@ -66,7 +68,6 @@ public:
 private:
     HRESULT ReadData();
     HRESULT PushDataBuffer(GstBuffer *pBuffer);
-    HRESULT CompleteReadData(HRESULT hr);
     HRESULT PrepareWaitForData();
 
     void Lock();
@@ -93,6 +94,8 @@ private:
     HRESULT m_readResult;
 
     BOOL m_bWaitForEvent;
+    BOOL m_bIsEOS;
+    BOOL m_bIsEOSEventReceived;
 
     CRITICAL_SECTION m_csLock;
 

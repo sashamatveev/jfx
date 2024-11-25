@@ -531,7 +531,10 @@ static GstFlowReturn hls_progress_buffer_getrange(GstPad *pad, GstObject *parent
     {
         send_hls_not_full_message(element);
         g_mutex_unlock(&element->lock);
-        return GST_FLOW_FLUSHING;
+        if (element->is_eos)
+            return GST_FLOW_EOS;
+        else
+            return GST_FLOW_FLUSHING;
     }
     else
     {
@@ -752,9 +755,17 @@ static gboolean hls_progress_buffer_sink_event(GstPad *pad, GstObject *parent, G
         element->is_eos = TRUE;
         g_cond_signal(&element->add_cond);
         g_mutex_unlock(&element->lock);
-        // INLINE - gst_event_unref()
-        gst_event_unref(event);
-        ret = TRUE;
+
+        if (element->is_pull_mode)
+        {
+            ret = gst_pad_push_event(element->srcpad, event);
+        }
+        else
+        {
+            // INLINE - gst_event_unref()
+            gst_event_unref(event);
+            ret = TRUE;
+        }
 
         break;
     default:

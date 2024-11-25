@@ -57,6 +57,8 @@ CGSTMFByteStream::CGSTMFByteStream(QWORD qwLength, GstPad *pSinkPad)
     m_pAsyncResult = NULL;
     m_readResult = E_FAIL;
     m_bWaitForEvent = FALSE;
+    m_bIsEOS = FALSE;
+    m_bIsEOSEventReceived = FALSE;
 
     m_pSinkPad = pSinkPad;
 
@@ -88,6 +90,7 @@ void CGSTMFByteStream::SetSegmentLength(QWORD qwSegmentLength, bool bForce)
     {
         m_qwSegmentLength = qwSegmentLength;
         m_qwSegmentPosition = 0;
+        m_bIsEOS = FALSE;
     }
     Unlock();
 
@@ -102,6 +105,20 @@ void CGSTMFByteStream::SetSegmentLength(QWORD qwSegmentLength, bool bForce)
 bool CGSTMFByteStream::IsSeekSupported()
 {
     return (m_qwLength != -1);
+}
+
+HRESULT CGSTMFByteStream::CompleteReadData(HRESULT hr)
+{
+    m_readResult = hr;
+    if (m_pCallback && m_pAsyncResult)
+        return m_pCallback->Invoke(m_pAsyncResult);
+
+    return S_OK;
+}
+
+void CGSTMFByteStream::SetIsEOS()
+{
+    m_bIsEOSEventReceived = TRUE;
 }
 
 // IMFByteStream
@@ -181,6 +198,9 @@ HRESULT CGSTMFByteStream::EndRead(IMFAsyncResult *pResult, ULONG *pcbRead)
 
     *pcbRead = m_cbBytesRead;
 
+    m_pCallback = NULL;
+    m_pAsyncResult = NULL;
+
     TRACE("JFXMEDIA CGSTMFByteStream::EndRead() m_cbBytesRead: %lu\n", m_cbBytesRead);
 
     return S_OK;
@@ -208,22 +228,31 @@ HRESULT CGSTMFByteStream::GetCapabilities(DWORD *pdwCapabilities)
 
 HRESULT CGSTMFByteStream::GetCurrentPosition(QWORD *pqwPosition)
 {
-    (*pqwPosition) = m_qwPosition;
+    if (m_qwLength != -1)
+        (*pqwPosition) = m_qwPosition;
+    else
+        (*pqwPosition) = -1;
+    g_print("AMDEBUG CGSTMFByteStream::GetCurrentPosition() %llu\n", (*pqwPosition));
     return S_OK;
 }
 
 HRESULT CGSTMFByteStream::GetLength(QWORD *pqwLength)
 {
     (*pqwLength) = m_qwLength;
+    g_print("AMDEBUG CGSTMFByteStream::GetLength() %llu\n", (*pqwLength));
     return S_OK;
 }
 
 HRESULT CGSTMFByteStream::IsEndOfStream(BOOL *pfEndOfStream)
 {
-    if (m_qwPosition >= m_qwLength)
-        *pfEndOfStream = TRUE;
+    if (m_bIsEOS)
+        (*pfEndOfStream) = TRUE;
+    else if (m_qwPosition >= m_qwLength)
+        (*pfEndOfStream) = TRUE;
     else
-        *pfEndOfStream = FALSE;
+        (*pfEndOfStream) = FALSE;
+
+    g_print("AMDEBUG CGSTMFByteStream::IsEndOfStream() %d\n", (*pfEndOfStream));
 
     return S_OK;
 }
@@ -271,7 +300,6 @@ HRESULT CGSTMFByteStream::SetCurrentPosition(QWORD qwPosition)
     if (m_qwPosition == qwPosition)
         return S_OK;
 
-    //
     if (m_qwLength != -1)
     {
         m_qwPosition = qwPosition;
@@ -382,8 +410,17 @@ HRESULT CGSTMFByteStream::ReadData()
             gint64 data_length = 0;
             if (gst_pad_peer_query_duration(m_pSinkPad, GST_FORMAT_BYTES, &data_length))
                 SetSegmentLength((QWORD)data_length, true);
-            else
-                SetSegmentLength(-1, true);
+            else if (!m_bIsEOSEventReceived)
+                return PrepareWaitForData(); // HLS is not ready yet, so wait for it
+        }
+
+        // If length known adjust m_cbBytes to make sure we do not read
+        // pass EOS. "progressbuffer" does not handle last buffer nicely
+        // and will return EOS if we do not read exact amount of data.
+        if (m_qwLength != -1)
+        {
+            if (m_qwPosition < m_qwLength && (m_qwPosition + m_cbBytes) > m_qwLength)
+                m_cbBytes = m_qwLength - m_qwPosition;
         }
 
         if (m_cbBytesRead < m_cbBytes)
@@ -404,6 +441,11 @@ HRESULT CGSTMFByteStream::ReadData()
         {
             // Wait for FX_EVENT_RANGE_READY. It will be send when data available.
             return PrepareWaitForData();
+        }
+        else if (ret == GST_FLOW_EOS)
+        {
+            m_bIsEOS = TRUE;
+            return CompleteReadData(S_OK);
         }
         else if (ret == GST_FLOW_OK)
         {
@@ -463,15 +505,6 @@ HRESULT CGSTMFByteStream::PushDataBuffer(GstBuffer* pBuffer)
     gst_buffer_unref(pBuffer);
 
     return hr;
-}
-
-HRESULT CGSTMFByteStream::CompleteReadData(HRESULT hr)
-{
-    m_readResult = hr;
-    if (m_pCallback && m_pAsyncResult)
-        return m_pCallback->Invoke(m_pAsyncResult);
-
-    return S_OK;
 }
 
 HRESULT CGSTMFByteStream::PrepareWaitForData()
