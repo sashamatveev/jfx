@@ -41,7 +41,8 @@ public:
     void SetSegmentLength(QWORD qwSegmentLength, bool bForce);
     bool IsSeekSupported();
     HRESULT CompleteReadData(HRESULT hr);
-    void SetIsEOS();
+    void SignalEOS();
+    void ClearEOS();
 
     // IMFByteStream
     HRESULT BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback, IUnknown *punkState);
@@ -96,6 +97,8 @@ private:
     BOOL m_bWaitForEvent;
     BOOL m_bIsEOS;
     BOOL m_bIsEOSEventReceived;
+    // Set to true if source is fragmented MP4
+    BOOL m_bfMP4;
 
     CRITICAL_SECTION m_csLock;
 

@@ -366,6 +366,9 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
         demux->is_eos_received = FALSE;
         demux->is_eos = FALSE;
 
+        if (demux->pGSTMFByteStream)
+            demux->pGSTMFByteStream->ClearEOS();
+
         // Cache segment event if we not ready yet
         if ((demux->audio_src_pad != NULL && gst_pad_is_linked(demux->audio_src_pad)) ||
             (demux->video_src_pad != NULL && gst_pad_is_linked(demux->video_src_pad)))
@@ -384,9 +387,6 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
         // INLINE - gst_event_unref()
         gst_event_unref(event);
         ret = TRUE;
-        // demux->is_flushing = TRUE;
-
-        // ret = mfdemux_push_sink_event(demux, event);
     }
     break;
     case GST_EVENT_FLUSH_STOP:
@@ -394,44 +394,15 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
         // INLINE - gst_event_unref()
         gst_event_unref(event);
         ret = TRUE;
-        // demux->pDecoder->ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
-        // if (demux->pColorConvert)
-        //     demux->pColorConvert->ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
-
-        // ret = mfdemux_push_sink_event(demux, event);
-
-        // demux->is_flushing = FALSE;
     }
     break;
     case GST_EVENT_EOS:
     {
         demux->is_eos_received = TRUE;
+        demux->is_eos = TRUE;
 
         if (demux->pGSTMFByteStream)
-            demux->pGSTMFByteStream->SetIsEOS();
-
-        // // Let demux know that we got end of stream
-        // hr = demux->pDecoder->ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0);
-
-        // // Ask demux to produce all remaining data
-        // if (SUCCEEDED(hr))
-        //     demux->pDecoder->ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0);
-
-        // // Deliver remaining data
-        // gint po_ret;
-        // do
-        // {
-        //     po_ret = mfdemux_process_output(demux);
-        // } while (po_ret == PO_DELIVERED);
-
-        // if (demux->pColorConvert)
-        // {
-        //     hr = demux->pColorConvert->ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0);
-        //     if (SUCCEEDED(hr))
-        //         hr = demux->pColorConvert->ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
-        // }
-
-        demux->is_eos = TRUE;
+            demux->pGSTMFByteStream->SignalEOS();
 
         // INLINE - gst_event_unref()
         gst_event_unref(event);
@@ -533,7 +504,7 @@ static gboolean mfdemux_src_query(GstPad *pad, GstObject *parent, GstQuery *quer
 
 static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *event)
 {
-    gboolean ret = TRUE;
+    gboolean ret = FALSE;
     GstMFDemux *demux = GST_MFDEMUX(parent);
 
     switch (GST_EVENT_TYPE (event))
@@ -550,18 +521,24 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
             gint64 stop;            // the seek stop position in the given format
             guint32 seqnum;
 
-            if (demux->pGSTMFByteStream == NULL || demux->pSourceReader == NULL)
-                return FALSE; // Something wrong, but unlikely.
-
             // Do not init seek if we in error state. It can happen if
             // critical error occured and we disposing pipeline.
             g_mutex_lock(&demux->lock);
-            if (demux->src_result == GST_FLOW_ERROR)
+            if (demux->src_result == GST_FLOW_ERROR ||
+                demux->pGSTMFByteStream == NULL ||
+                demux->pSourceReader == NULL)
             {
                 g_mutex_unlock(&demux->lock);
-                return FALSE;
+                // INLINE - gst_event_unref()
+                gst_event_unref (event);
+                return TRUE;
             }
             g_mutex_unlock(&demux->lock);
+
+            // Clear EOS on byte stream, since SourceReader will start
+            // reading it during seek.
+            if (demux->pGSTMFByteStream)
+                demux->pGSTMFByteStream->ClearEOS();
 
             // Get seek description from the event.
             gst_event_parse_seek (event, &rate, &format, &flags,
@@ -606,10 +583,15 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                     hr = demux->pSourceReader->SetCurrentPosition(GUID_NULL, pv);
                     // TODO handle error
                     PropVariantClear(&pv);
+
+                    // INLINE - gst_event_unref()
+                    gst_event_unref (event);
+                    ret = TRUE; // We handle event
                 }
                 else
                 {
                     demux->pGSTMFByteStream->SetSegmentLength(-1, true);
+                    // Upstream will handle and unref event
                     ret = gst_pad_push_event(demux->sink_pad, event);
 
                     PROPVARIANT pv = { 0 };
@@ -636,9 +618,6 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                 gst_pad_start_task(demux->sink_pad, (GstTaskFunction) mfdemux_loop,
                         demux->sink_pad, NULL);
             }
-
-            // INLINE - gst_event_unref()
-            gst_event_unref (event);
         }
         break;
         default:
@@ -1285,6 +1264,14 @@ static void mfdemux_loop(GstPad * pad)
             result = GST_FLOW_EOS;
             //result = GST_FLOW_OK;
         }
+    }
+    else
+    {
+        gst_element_message_full(GST_ELEMENT(demux), GST_MESSAGE_ERROR,
+            GST_STREAM_ERROR, GST_STREAM_ERROR_DEMUX,
+            g_strdup_printf("ReadSample() failed (0x%X)", hr), NULL,
+            ("mfdemux.c"), ("mfdemux_loop"), 0);
+        result = GST_FLOW_ERROR;
     }
 
     g_mutex_lock(&demux->lock);

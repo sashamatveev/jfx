@@ -562,6 +562,15 @@ static GstFlowReturn hls_progress_buffer_getrange(GstPad *pad, GstObject *parent
         send_hls_not_full_message(element);
         g_cond_signal(&element->del_cond);
     }
+    if (!element->cache_read_ready[element->cache_read_index])
+    {
+        if (element->is_eos)
+        {
+            g_mutex_unlock(&element->lock);
+            gst_pad_push_event(element->srcpad, gst_event_new_eos());
+            g_mutex_lock(&element->lock);
+        }
+    }
     g_mutex_unlock(&element->lock);
 
     return result;
@@ -618,6 +627,33 @@ static gboolean hls_progress_buffer_query(GstPad *pad, GstObject *parent, GstQue
     }
 
     return result;
+}
+
+/**
+ * hls_finalize_read_segment()
+ *
+ * Marks segment as read ready in pull mode. In pull mode we need to call it
+ * for EOS as well to finalize last segment.
+ *
+ * Note: Lock needs to be aquired when this function is called.
+ */
+static void hls_finalize_read_segment(HLSProgressBuffer *element)
+{
+    if (element && element->is_pull_mode)
+    {
+        if (element->cache_write_index != -1)
+        {
+            element->cache_read_ready[element->cache_write_index] = TRUE;
+            // Let downstream know that we have segment ready to read
+            GstStructure *s = gst_structure_new("HLSSegmentInfo",
+                    "size", G_TYPE_INT64,
+                    element->cache_size[element->cache_read_index], NULL);
+
+            g_mutex_unlock(&element->lock);
+            gst_pad_push_event(element->srcpad, gst_event_new_custom(FX_EVENT_SEGMENT_READY, s));
+            g_mutex_lock(&element->lock);
+        }
+    }
 }
 
 /**
@@ -682,21 +718,7 @@ static gboolean hls_progress_buffer_sink_event(GstPad *pad, GstObject *parent, G
 
             // Get and prepare next write segment
             g_mutex_lock(&element->lock);
-            if (element->is_pull_mode)
-            {
-                if (element->cache_write_index != -1)
-                {
-                    element->cache_read_ready[element->cache_write_index] = TRUE;
-                    // Let downstream know that we have segment ready to read
-                    GstStructure *s = gst_structure_new ("HLSSegmentInfo",
-                        "size", G_TYPE_INT64,
-                        element->cache_size[element->cache_read_index], NULL);
-
-                    g_mutex_unlock(&element->lock);
-                    gst_pad_push_event(element->srcpad, gst_event_new_custom(FX_EVENT_SEGMENT_READY, s));
-                    g_mutex_lock(&element->lock);
-                }
-            }
+            hls_finalize_read_segment(element);
             element->cache_write_index = (element->cache_write_index + 1) % NUM_OF_CACHED_SEGMENTS;
 
             while (element->srcresult == GST_FLOW_OK && !element->cache_write_ready[element->cache_write_index])
@@ -752,20 +774,14 @@ static gboolean hls_progress_buffer_sink_event(GstPad *pad, GstObject *parent, G
         send_hls_eos_message(element); // Just in case we stall
 
         g_mutex_lock(&element->lock);
+        hls_finalize_read_segment(element);
         element->is_eos = TRUE;
         g_cond_signal(&element->add_cond);
         g_mutex_unlock(&element->lock);
 
-        if (element->is_pull_mode)
-        {
-            ret = gst_pad_push_event(element->srcpad, event);
-        }
-        else
-        {
-            // INLINE - gst_event_unref()
-            gst_event_unref(event);
-            ret = TRUE;
-        }
+        // INLINE - gst_event_unref()
+        gst_event_unref(event);
+        ret = TRUE;
 
         break;
     default:

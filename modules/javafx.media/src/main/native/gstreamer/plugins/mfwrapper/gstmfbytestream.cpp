@@ -62,6 +62,12 @@ CGSTMFByteStream::CGSTMFByteStream(QWORD qwLength, GstPad *pSinkPad)
 
     m_pSinkPad = pSinkPad;
 
+    // If length is not provided we assume it is fMP4
+    if (qwLength == -1)
+        m_bfMP4 = TRUE;
+    else
+        m_bfMP4 = FALSE;
+
     InitializeCriticalSection(&m_csLock);
 }
 
@@ -90,12 +96,8 @@ void CGSTMFByteStream::SetSegmentLength(QWORD qwSegmentLength, bool bForce)
     {
         m_qwSegmentLength = qwSegmentLength;
         m_qwSegmentPosition = 0;
-        m_bIsEOS = FALSE;
     }
     Unlock();
-
-    //m_qwLength = qwSegmentLength;
-    //m_qwPosition = 0;
 }
 
 // Even if we reporting MFBYTESTREAM_IS_SEEKABLE to MF to make it happy (will not
@@ -104,11 +106,12 @@ void CGSTMFByteStream::SetSegmentLength(QWORD qwSegmentLength, bool bForce)
 // seek.
 bool CGSTMFByteStream::IsSeekSupported()
 {
-    return (m_qwLength != -1);
+    return !m_bfMP4;
 }
 
 HRESULT CGSTMFByteStream::CompleteReadData(HRESULT hr)
 {
+    g_print("AMDEBUG CGSTMFByteStream::CompleteReadData() 0x%X m_pCallback %p m_pAsyncResult %p\n", hr, m_pCallback, m_pAsyncResult);
     m_readResult = hr;
     if (m_pCallback && m_pAsyncResult)
         return m_pCallback->Invoke(m_pAsyncResult);
@@ -116,9 +119,15 @@ HRESULT CGSTMFByteStream::CompleteReadData(HRESULT hr)
     return S_OK;
 }
 
-void CGSTMFByteStream::SetIsEOS()
+void CGSTMFByteStream::SignalEOS()
 {
     m_bIsEOSEventReceived = TRUE;
+}
+
+void CGSTMFByteStream::ClearEOS()
+{
+    m_bIsEOS = FALSE;
+    m_bIsEOSEventReceived = FALSE;
 }
 
 // IMFByteStream
@@ -132,7 +141,7 @@ HRESULT CGSTMFByteStream::BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallb
     if (m_pSinkPad == NULL)
         return E_POINTER;
 
-    TRACE("JFXMEDIA CGSTMFByteStream::BeginRead() cb: %lu m_qwSegmentLength: %llu m_qwSegmentPosition: %llu\n", cb, m_qwSegmentLength, m_qwSegmentPosition);
+    TRACE("JFXMEDIA CGSTMFByteStream::BeginRead() cb: %lu m_qwSegmentLength: %llu m_qwSegmentPosition: %llu m_qwPosition: %llu\n", cb, m_qwSegmentLength, m_qwSegmentPosition, m_qwPosition);
 
     // Save read request
     m_pBytes = pb;
@@ -144,34 +153,6 @@ HRESULT CGSTMFByteStream::BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallb
     hr = MFCreateAsyncResult(NULL, pCallback, punkState, &m_pAsyncResult);
     if (FAILED(hr))
         return hr;
-
-    // // Check if we have segment ready
-    // if (m_qwSegmentLength == -1)
-    // {
-    //     gint64 data_length = 0;
-    //     if (gst_pad_peer_query_duration(m_pSinkPad, GST_FORMAT_BYTES, &data_length))
-    //         SetSegmentLength((QWORD)data_length);
-    //     else
-    //         m_qwSegmentLength = -1;
-    // }
-
-    // // Nothing to read, so wait for event
-    // if (m_qwLength == -1 && m_qwSegmentLength == -1)
-    // {
-    //     Lock();
-    //     m_bWaitForEvent = TRUE;
-    //     Unlock();
-    //     return S_OK;
-    // }
-
-    // QWORD qwDataLength = m_qwLength != -1 ? m_qwLength : m_qwSegmentLength;
-    // m_pBytes = pb;
-    // m_cbBytes = (cb < qwDataLength) ? cb : qwDataLength;
-    // if ((m_qwPosition + m_cbBytes) > qwDataLength)
-    //     m_cbBytes = qwDataLength - m_qwPosition;
-    // m_pCallback = pCallback;
-
-    //m_pAsyncResult = (IMFAsyncResult*)punkState;
 
     return ReadData();
 }
@@ -213,13 +194,11 @@ HRESULT CGSTMFByteStream::EndWrite(IMFAsyncResult *pResult, ULONG *pcbWritten)
 
 HRESULT CGSTMFByteStream::Flush()
 {
-    // No need to flush upstream since we in pull mode.
-    return S_OK;
+    return E_NOTIMPL;
 }
 
 HRESULT CGSTMFByteStream::GetCapabilities(DWORD *pdwCapabilities)
 {
-    // TODO set caps based on real information
     (*pdwCapabilities) |= MFBYTESTREAM_IS_READABLE;
     (*pdwCapabilities) |= MFBYTESTREAM_IS_SEEKABLE;
     (*pdwCapabilities) |= MFBYTESTREAM_IS_REMOTE;
@@ -228,17 +207,24 @@ HRESULT CGSTMFByteStream::GetCapabilities(DWORD *pdwCapabilities)
 
 HRESULT CGSTMFByteStream::GetCurrentPosition(QWORD *pqwPosition)
 {
-    if (m_qwLength != -1)
+//    if (m_qwLength != -1)
         (*pqwPosition) = m_qwPosition;
-    else
-        (*pqwPosition) = -1;
+    // else if (m_bIsEOS)
+    //     (*pqwPosition) = m_qwSegmentPosition;
+    // else
+    //     (*pqwPosition) = -1;
     g_print("AMDEBUG CGSTMFByteStream::GetCurrentPosition() %llu\n", (*pqwPosition));
     return S_OK;
 }
 
 HRESULT CGSTMFByteStream::GetLength(QWORD *pqwLength)
 {
-    (*pqwLength) = m_qwLength;
+    if (!m_bfMP4)
+        (*pqwLength) = m_qwLength;
+    // else if (m_bIsEOS)
+    //     (*pqwLength) = m_qwSegmentLength;
+    else
+        (*pqwLength) = -1;
     g_print("AMDEBUG CGSTMFByteStream::GetLength() %llu\n", (*pqwLength));
     return S_OK;
 }
@@ -300,7 +286,7 @@ HRESULT CGSTMFByteStream::SetCurrentPosition(QWORD qwPosition)
     if (m_qwPosition == qwPosition)
         return S_OK;
 
-    if (m_qwLength != -1)
+    if (!m_bfMP4)
     {
         m_qwPosition = qwPosition;
     }
@@ -372,52 +358,24 @@ HRESULT CGSTMFByteStream::ReadData()
     guint64 offset = 0;
     ULONG cbBytes = 0;
 
-    // Adjust read bytes
-    // if (m_qwLength == -1 && m_qwSegmentLength == -1) // Nothing to read, but unlikely
-    // {
-    //     m_cbBytes = 0;
-    //     hr = m_pCallback->Invoke(m_pAsyncResult);
-    // }
-
-    // if (m_qwLength != -1)
-    // {
-    //     cbBytes = (m_cbBytes < m_qwLength) ? m_cbBytes : m_qwLength;
-    //     if ((m_qwPosition + m_cbBytes) > m_qwLength)
-    //         cbBytes = m_qwLength - m_qwPosition;
-    //     offset = (guint64)m_qwPosition;
-    // }
-    // if (m_qwLength == -1 && m_qwSegmentLength == -1)
-    // {
-    //     return PrepareWaitForData();
-    // }
-
-    // if (m_qwSegmentLength != -1)
-    // {
-    //     cbBytes = (m_cbBytes < m_qwSegmentLength) ? m_cbBytes : m_qwSegmentLength;
-    //     if ((m_qwSegmentPosition + m_cbBytes) > m_qwSegmentLength)
-    //         cbBytes = m_qwSegmentLength - m_qwSegmentPosition;
-    //     offset = (guint64)m_qwSegmentPosition;
-    // }
-
     // Read data from upstream
     do
     {
         // Prepare next segment. If we do not have segment info then query it
         // or if we read entire segment. HLSProgressBuffer will auto switch to
         // next one, so once we read it just query info for next one.
-        if (m_qwLength == -1 && (m_qwSegmentLength == -1 || m_qwSegmentPosition >= m_qwSegmentLength))
+        if (m_bfMP4 && (m_qwSegmentLength == -1 || m_qwSegmentPosition >= m_qwSegmentLength))
         {
             gint64 data_length = 0;
             if (gst_pad_peer_query_duration(m_pSinkPad, GST_FORMAT_BYTES, &data_length))
                 SetSegmentLength((QWORD)data_length, true);
-            else if (!m_bIsEOSEventReceived)
+            else
                 return PrepareWaitForData(); // HLS is not ready yet, so wait for it
         }
-
         // If length known adjust m_cbBytes to make sure we do not read
         // pass EOS. "progressbuffer" does not handle last buffer nicely
         // and will return EOS if we do not read exact amount of data.
-        if (m_qwLength != -1)
+        else if (!m_bfMP4)
         {
             if (m_qwPosition < m_qwLength && (m_qwPosition + m_cbBytes) > m_qwLength)
                 m_cbBytes = m_qwLength - m_qwPosition;
@@ -428,8 +386,7 @@ HRESULT CGSTMFByteStream::ReadData()
         else
             return CompleteReadData(E_FAIL);
 
-        // Lenght is unknown. We assume that we are reading fMP4 (HLS).
-        if (m_qwLength == -1 && m_qwSegmentLength != -1)
+        if (m_bfMP4)
             offset = (guint64)m_qwSegmentPosition;
         else if (m_qwLength != -1)
             offset = (guint64)m_qwPosition;
@@ -449,11 +406,15 @@ HRESULT CGSTMFByteStream::ReadData()
         }
         else if (ret == GST_FLOW_OK)
         {
+            // Set EOS flag, so we can complete and signal EOS
+            if (m_bIsEOSEventReceived)
+                m_bIsEOS = TRUE;
+
             hr = PushDataBuffer(buf);
-            if (SUCCEEDED(hr) && m_cbBytesRead == m_cbBytes)
-                return CompleteReadData(S_OK);
-            else if (FAILED(hr))
+            if (FAILED(hr))
                 return CompleteReadData(E_FAIL);
+            else if (m_cbBytesRead == m_cbBytes || m_bIsEOS)
+                return CompleteReadData(S_OK);
         }
         else
         {
@@ -514,7 +475,7 @@ HRESULT CGSTMFByteStream::PrepareWaitForData()
     Unlock();
 
     // In HLS mode prepare for next segment
-    if (m_qwLength == -1)
+    if (m_bfMP4)
     {
         m_qwSegmentLength = -1;
         m_qwSegmentPosition = 0;
