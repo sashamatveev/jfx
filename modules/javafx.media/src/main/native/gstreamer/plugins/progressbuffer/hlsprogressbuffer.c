@@ -538,18 +538,18 @@ static GstFlowReturn hls_progress_buffer_getrange(GstPad *pad, GstObject *parent
     }
     else
     {
+        // // If descont flush demux and let it reconfigure
+        // if (element->cache_discont[element->cache_read_index])
+        // {
+        //     element->cache_discont[element->cache_read_index] = FALSE;
+        //     g_mutex_unlock(&element->lock);
+        //     return GST_FLOW_EOS;
+        // }
+
         // Read data as requested or less.
         result = cache_read_buffer_from_position2(
                 element->cache[element->cache_read_index], start_position,
                 size, buffer);
-
-        if (element->cache_discont[element->cache_read_index] &&
-                result == GST_FLOW_OK && (*buffer) != NULL)
-        {
-            *buffer = gst_buffer_make_writable(*buffer);
-            GST_BUFFER_FLAG_SET(*buffer, GST_BUFFER_FLAG_DISCONT);
-            element->cache_discont[element->cache_read_index] = FALSE;
-        }
     }
 
     // Check if we still has something to read. If no signal that we done with

@@ -85,7 +85,6 @@ struct _GstMFDemux
     HRESULT hr_mfstartup;
 
     gboolean is_flushing;
-    gboolean is_eos_received;
     gboolean is_eos;
     gboolean force_discontinuity;
     gboolean is_demux_initialized;

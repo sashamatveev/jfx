@@ -193,7 +193,6 @@ static void gst_mfdemux_init(GstMFDemux *demux)
     // gst_element_add_pad(GST_ELEMENT(demux), demux->srcpad);
 
     demux->is_flushing = FALSE;
-    demux->is_eos_received = FALSE;
     demux->is_eos = FALSE;
     demux->is_demux_initialized = FALSE;
     demux->force_discontinuity = FALSE;
@@ -363,7 +362,6 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     case GST_EVENT_SEGMENT:
     {
         demux->force_discontinuity = TRUE;
-        demux->is_eos_received = FALSE;
         demux->is_eos = FALSE;
 
         if (demux->pGSTMFByteStream)
@@ -398,7 +396,6 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     break;
     case GST_EVENT_EOS:
     {
-        demux->is_eos_received = TRUE;
         demux->is_eos = TRUE;
 
         if (demux->pGSTMFByteStream)
@@ -882,6 +879,34 @@ static gboolean mfdemux_configure_audio_src_pad(GstMFDemux *demux)
     return TRUE;
 }
 
+// static IMFMediaType* mfdemux_get_raw_video_format(IMFMediaType *pMediaType)
+// {
+//     HRESULT hr = S_OK;
+//     IMFMediaType *pOutputType = NULL;
+//     UINT32 uiWidth = 0;
+//     UINT32 uiHeight = 0;
+//     UINT32 numerator = 0;
+//     UINT32 denominator = 0;
+
+//     MFGetAttributeSize(pMediaType, MF_MT_FRAME_SIZE, &uiWidth, &uiHeight);
+//     MFGetAttributeRatio(pMediaType, MF_MT_FRAME_RATE, &numerator, &denominator);
+
+//     hr = MFCreateMediaType(&pOutputType);
+//     if (SUCCEEDED(hr))
+//         hr = pOutputType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+
+//     if (SUCCEEDED(hr))
+//         hr = pOutputType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12);
+
+//     if (SUCCEEDED(hr))
+//         hr = MFSetAttributeSize(pOutputType, MF_MT_FRAME_SIZE, uiWidth, uiHeight);
+
+//     if (SUCCEEDED(hr))
+//         hr = MFSetAttributeRatio(pOutputType, MF_MT_FRAME_RATE, numerator, denominator);
+
+//     return pOutputType;
+// }
+
 static gboolean mfdemux_configure_video_stream(GstMFDemux *demux, gboolean *hasVideo)
 {
     HRESULT hr = S_OK;
@@ -935,6 +960,9 @@ static gboolean mfdemux_configure_video_stream(GstMFDemux *demux, gboolean *hasV
                                demux->videoFormat.codecID);
     }
 
+    // IMFMediaType *pOutputType = mfdemux_get_raw_video_format(pMediaType);
+    // hr = demux->pSourceReader->SetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, NULL, pOutputType);
+    // SafeRelease(&pOutputType);
     SafeRelease(&pMediaType);
 
     if (FAILED(hr))
@@ -964,7 +992,7 @@ static gboolean mfdemux_configure_video_src_caps(GstMFDemux *demux)
         caps = gst_caps_new_simple ("video/x-h264",
                 //"width", G_TYPE_INT, (gint)demux->videoFormat.uiWidth,
                 //"height", G_TYPE_INT, (gint)demux->videoFormat.uiHeight,
-                NULL);
+                NULL, NULL);
     }
     else if (demux->videoFormat.codecID == JFX_CODEC_ID_HEVC)
     {
@@ -1171,9 +1199,16 @@ static GstFlowReturn mfdemux_deliver_sample(GstMFDemux *demux, GstPad* pad,
 static GstPad* mfdemux_get_src_pad(GstMFDemux *demux, DWORD index)
 {
     if (demux->audio_stream_index == index)
+    {
+        //g_print("AMDEBUG mfdemux_get_src_pad() Video (%d)\n", index);
         return demux->audio_src_pad;
+    }
     else if (demux->video_stream_index == index)
+    {
+        //g_print("AMDEBUG mfdemux_get_src_pad() Audio (%d)\n", index);
         return demux->video_src_pad;
+        //return NULL;
+    }
 
     // We probbaly do not know yet index -> src_pad mapping.
     IMFMediaType *pMediaType = NULL;
@@ -1185,13 +1220,21 @@ static GstPad* mfdemux_get_src_pad(GstMFDemux *demux, DWORD index)
         SafeRelease(&pMediaType);
         if (SUCCEEDED(hr) && IsEqualGUID(guidMajorType, MFMediaType_Audio))
         {
+//            SafeRelease(&pMediaType);
             demux->audio_stream_index = index;
             return demux->audio_src_pad;
         }
         else if (SUCCEEDED(hr) && IsEqualGUID(guidMajorType, MFMediaType_Video))
         {
+
+            // UINT32 uiWidth = 0;
+            // UINT32 uiHeight = 0;
+            // MFGetAttributeSize(pMediaType, MF_MT_FRAME_SIZE, &uiWidth, &uiHeight);
+            // g_print("AMDEBUG uiWidth %d uiHeight %d\n", uiWidth, uiHeight);
+            // SafeRelease(&pMediaType);
             demux->video_stream_index = index;
             return demux->video_src_pad;
+            //return NULL;
         }
     }
 
@@ -1230,31 +1273,20 @@ static void mfdemux_loop(GstPad * pad)
         return;
     }
 
+    DWORD dwControlFlags = demux->is_eos ? MF_SOURCE_READER_CONTROLF_DRAIN : 0;
     DWORD dwActualStreamIndex = 0;
     DWORD dwStreamFlags = 0;
     LONGLONG llTimestamp = -1;
     IMFSample *pSample = NULL;
     GST_PAD_STREAM_UNLOCK(pad);
     HRESULT hr = demux->pSourceReader->ReadSample(MF_SOURCE_READER_ANY_STREAM,
-                                                0,
+                                                dwControlFlags,
                                                 &dwActualStreamIndex,
                                                 &dwStreamFlags,
                                                 &llTimestamp,
                                                 &pSample);
     GST_PAD_STREAM_LOCK(pad);
-    if (hr == S_OK && pSample != NULL)
-    {
-        GstPad *src_pad = mfdemux_get_src_pad(demux, dwActualStreamIndex);
-        if (src_pad != NULL)
-            result = mfdemux_deliver_sample(demux, src_pad, pSample);
-        if (result != GST_FLOW_OK)
-        {
-            g_print("AMDEBUG mfdemux_deliver_sample() failed with %d\n", result);
-        }
-
-        SafeRelease(&pSample);
-    }
-    else if (hr == S_OK)
+    if (hr == S_OK)
     {
         if ((dwStreamFlags & MF_SOURCE_READERF_ENDOFSTREAM) == MF_SOURCE_READERF_ENDOFSTREAM)
         {
@@ -1262,16 +1294,64 @@ static void mfdemux_loop(GstPad * pad)
             // last read only and not for each stream.
             mfdemux_push_sink_event(demux, gst_event_new_eos());
             result = GST_FLOW_EOS;
-            //result = GST_FLOW_OK;
+        }
+        else if ((dwStreamFlags & MF_SOURCE_READERF_ERROR) == MF_SOURCE_READERF_ERROR)
+        {
+            gst_element_message_full(GST_ELEMENT(demux), GST_MESSAGE_ERROR,
+                GST_STREAM_ERROR, GST_STREAM_ERROR_DEMUX,
+                g_strdup("ReadSample() failed (MF_SOURCE_READERF_ERROR)"), NULL,
+                ("mfdemux.c"), ("mfdemux_loop"), 0);
+            result = GST_FLOW_ERROR;
+        }
+        else if ((dwStreamFlags & MF_SOURCE_READERF_NEWSTREAM) == MF_SOURCE_READERF_NEWSTREAM)
+        {
+            g_print("AMDEBUG mfdemux_loop() MF_SOURCE_READERF_NEWSTREAM\n");
+        }
+        else if ((dwStreamFlags & MF_SOURCE_READERF_NATIVEMEDIATYPECHANGED) == MF_SOURCE_READERF_NATIVEMEDIATYPECHANGED)
+        {
+            g_print("AMDEBUG mfdemux_loop() MF_SOURCE_READERF_NATIVEMEDIATYPECHANGED\n");
+        }
+        else if ((dwStreamFlags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) == MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED)
+        {
+            g_print("AMDEBUG mfdemux_loop() MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED\n");
+        }
+
+        if (pSample != NULL)
+        {
+            GstPad *src_pad = mfdemux_get_src_pad(demux, dwActualStreamIndex);
+            if (src_pad != NULL)
+                result = mfdemux_deliver_sample(demux, src_pad, pSample);
+            // else
+            //     g_print("AMDEBUG mfdemux_deliver_sample() Dropping video frame\n");
+            if (result != GST_FLOW_OK)
+            {
+                g_print("AMDEBUG mfdemux_deliver_sample() failed with %d\n", result);
+            }
+
+            SafeRelease(&pSample);
+        }
+        else if (demux->is_eos)
+        {
+            // Deliver EOS to all src pads, since source reader reports it for
+            // last read only and not for each stream.
+            mfdemux_push_sink_event(demux, gst_event_new_eos());
+            result = GST_FLOW_EOS;
         }
     }
     else
     {
-        gst_element_message_full(GST_ELEMENT(demux), GST_MESSAGE_ERROR,
-            GST_STREAM_ERROR, GST_STREAM_ERROR_DEMUX,
-            g_strdup_printf("ReadSample() failed (0x%X)", hr), NULL,
-            ("mfdemux.c"), ("mfdemux_loop"), 0);
-        result = GST_FLOW_ERROR;
+        g_mutex_lock(&demux->lock);
+        result = demux->src_result;
+        g_mutex_unlock(&demux->lock);
+
+        if (result != GST_FLOW_ERROR)
+        {
+            gst_element_message_full(GST_ELEMENT(demux), GST_MESSAGE_ERROR,
+                GST_STREAM_ERROR, GST_STREAM_ERROR_DEMUX,
+                g_strdup_printf("ReadSample() failed (0x%X)", hr), NULL,
+                ("mfdemux.c"), ("mfdemux_loop"), 0);
+            result = GST_FLOW_ERROR;
+        }
     }
 
     g_mutex_lock(&demux->lock);
@@ -1347,7 +1427,7 @@ static gboolean mfdemux_activate_mode(GstPad *pad, GstObject *parent, GstPadMode
             GST_PAD_STREAM_LOCK(demux->sink_pad);
             // Unblock source reader if it was waiting for read.
             if (demux->pGSTMFByteStream)
-                demux->pGSTMFByteStream->CompleteReadData(S_OK);
+                demux->pGSTMFByteStream->CompleteReadData(E_FAIL);
             // Unlock stream lock so streaming thread can continue.
             GST_PAD_STREAM_UNLOCK(demux->sink_pad);
 

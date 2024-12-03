@@ -44,8 +44,15 @@ template <class T> void SafeRelease(T **ppT)
 
 CGSTMFByteStream::CGSTMFByteStream(QWORD qwLength, GstPad *pSinkPad)
 {
+    // If length is not provided we assume it is fMP4
+    if (qwLength == -1)
+        m_bfMP4 = TRUE;
+    else
+        m_bfMP4 = FALSE;
+
     m_ulRefCount = 0;
     m_qwPosition = 0;
+    //m_qwLength = m_bfMP4 ? 0 : qwLength;
     m_qwLength = qwLength;
     m_qwSegmentPosition = 0;
     m_qwSegmentLength = -1;
@@ -55,18 +62,12 @@ CGSTMFByteStream::CGSTMFByteStream(QWORD qwLength, GstPad *pSinkPad)
     m_cbBytesRead = 0;
     m_pCallback = NULL;
     m_pAsyncResult = NULL;
-    m_readResult = E_FAIL;
+    m_readResult = S_OK;
     m_bWaitForEvent = FALSE;
     m_bIsEOS = FALSE;
     m_bIsEOSEventReceived = FALSE;
 
     m_pSinkPad = pSinkPad;
-
-    // If length is not provided we assume it is fMP4
-    if (qwLength == -1)
-        m_bfMP4 = TRUE;
-    else
-        m_bfMP4 = FALSE;
 
     InitializeCriticalSection(&m_csLock);
 }
@@ -96,6 +97,8 @@ void CGSTMFByteStream::SetSegmentLength(QWORD qwSegmentLength, bool bForce)
     {
         m_qwSegmentLength = qwSegmentLength;
         m_qwSegmentPosition = 0;
+        // if (qwSegmentLength != -1)
+        //     m_qwLength += qwSegmentLength;
     }
     Unlock();
 }
@@ -141,7 +144,10 @@ HRESULT CGSTMFByteStream::BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallb
     if (m_pSinkPad == NULL)
         return E_POINTER;
 
-    TRACE("JFXMEDIA CGSTMFByteStream::BeginRead() cb: %lu m_qwSegmentLength: %llu m_qwSegmentPosition: %llu m_qwPosition: %llu\n", cb, m_qwSegmentLength, m_qwSegmentPosition, m_qwPosition);
+    if (m_readResult != S_OK)
+        return m_readResult; // Do not start new read if old one failed.
+
+    TRACE("JFXMEDIA CGSTMFByteStream::BeginRead() cb: %lu m_qwSegmentLength: %llu m_qwSegmentPosition: %llu m_qwPosition: %llu m_qwLength: %llu\n", cb, m_qwSegmentLength, m_qwSegmentPosition, m_qwPosition, m_qwLength);
 
     // Save read request
     m_pBytes = pb;
@@ -219,12 +225,21 @@ HRESULT CGSTMFByteStream::GetCurrentPosition(QWORD *pqwPosition)
 
 HRESULT CGSTMFByteStream::GetLength(QWORD *pqwLength)
 {
-    if (!m_bfMP4)
-        (*pqwLength) = m_qwLength;
-    // else if (m_bIsEOS)
-    //     (*pqwLength) = m_qwSegmentLength;
+    if (m_bfMP4)
+    {
+//        if (m_qwLength == 0)
+            (*pqwLength) = -1;
+        // else
+        //     (*pqwLength) = m_qwLength + 1 + 262144;
+    }
     else
-        (*pqwLength) = -1;
+        (*pqwLength) = m_qwLength;
+    // if (!m_bfMP4)
+    //     (*pqwLength) = m_qwLength;
+    // // else if (m_bIsEOS)
+    // //     (*pqwLength) = m_qwSegmentLength;
+    // else
+    //     (*pqwLength) = -1;
     g_print("AMDEBUG CGSTMFByteStream::GetLength() %llu\n", (*pqwLength));
     return S_OK;
 }
@@ -279,12 +294,24 @@ HRESULT CGSTMFByteStream::Seek(MFBYTESTREAM_SEEK_ORIGIN SeekOrigin, LONGLONG llS
 
 HRESULT CGSTMFByteStream::SetCurrentPosition(QWORD qwPosition)
 {
-    g_print("AMDEBUG CGSTMFByteStream::SetCurrentPosition() %llu\n", qwPosition);
+    g_print("AMDEBUG CGSTMFByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu\n", qwPosition, m_qwPosition);
     if (qwPosition > m_qwLength)
+    {
+        g_print("AMDEBUG CGSTMFByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu E_INVALIDARG\n", qwPosition, m_qwPosition);
         return E_INVALIDARG;
+    }
+
+    // if (m_bfMP4 && m_bIsEOS && qwPosition > m_qwPosition)
+    // {
+    //     g_print("AMDEBUG CGSTMFByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu E_INVALIDARG\n", qwPosition, m_qwPosition);
+    //     return E_INVALIDARG;
+    // }
 
     if (m_qwPosition == qwPosition)
+    {
+        g_print("AMDEBUG CGSTMFByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu S_OK\n", qwPosition, m_qwPosition);
         return S_OK;
+    }
 
     if (!m_bfMP4)
     {
@@ -297,6 +324,12 @@ HRESULT CGSTMFByteStream::SetCurrentPosition(QWORD qwPosition)
         m_qwPosition = 0;
         m_qwSegmentPosition = 0;
     }
+    // else if (m_bfMP4 && m_bIsEOS)
+    // {
+    //     m_qwPosition = qwPosition;
+    // }
+
+    g_print("AMDEBUG CGSTMFByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu S_OK\n", qwPosition, m_qwPosition);
 
     return S_OK;
 }
