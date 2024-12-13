@@ -574,6 +574,8 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                     demux->seek_position = start;
                     demux->send_new_segment = TRUE;
 
+                    g_print("AMDEBUG GST_EVENT_SEEK %lld\n", (LONGLONG)(start / 100));
+
                     PROPVARIANT pv = { 0 };
                     pv.vt = VT_I8;
                     pv.hVal.QuadPart = (LONGLONG)(start / 100);
@@ -1318,6 +1320,14 @@ static void mfdemux_loop(GstPad * pad)
 
         if (pSample != NULL)
         {
+            {
+            LONGLONG nsSampleTime = 0;
+            DWORD cbTotalLength = 0;
+            pSample->GetSampleTime(&nsSampleTime);
+            pSample->GetTotalLength(&cbTotalLength);
+            g_print("Received sample from reader: nsSampleTime: %lld cbTotalLength: %d\n", nsSampleTime, cbTotalLength);
+            }
+
             GstPad *src_pad = mfdemux_get_src_pad(demux, dwActualStreamIndex);
             if (src_pad != NULL)
                 result = mfdemux_deliver_sample(demux, src_pad, pSample);

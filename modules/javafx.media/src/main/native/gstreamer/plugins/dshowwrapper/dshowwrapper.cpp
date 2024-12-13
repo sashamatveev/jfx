@@ -55,8 +55,8 @@ using namespace std;
 #define H264_PTS_DEBUG 0
 #define AAC_PTS_DEBUG 0
 #define MP2T_PTS_INPUT_DEBUG 0
-#define H264_PTS_INPUT_DEBUG 0
-#define AAC_PTS_INPUT_DEBUG 0
+#define H264_PTS_INPUT_DEBUG 1
+#define AAC_PTS_INPUT_DEBUG 1
 #define EOS_DEBUG 0
 
 #define MAX_HEADER_SIZE 256
