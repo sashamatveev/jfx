@@ -35,6 +35,7 @@ import com.sun.javafx.collections.TrackableObservableList;
 import com.sun.javafx.css.StyleManager;
 import com.sun.javafx.cursor.CursorFrame;
 import com.sun.javafx.event.EventQueue;
+import com.sun.javafx.event.EventUtil;
 import com.sun.javafx.geom.PickRay;
 import com.sun.javafx.geom.Vec3d;
 import com.sun.javafx.geom.transform.BaseTransform;
@@ -87,9 +88,6 @@ import com.sun.javafx.logging.PlatformLogger;
 import com.sun.javafx.logging.PlatformLogger.Level;
 
 import java.io.File;
-import java.security.AccessControlContext;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Stream;
@@ -183,9 +181,6 @@ public class Scene implements EventTarget {
     private final SceneAntialiasing antiAliasing;
 
     private EnumSet<DirtyBits> dirtyBits = EnumSet.noneOf(DirtyBits.class);
-
-    @SuppressWarnings("removal")
-    final AccessControlContext acc = AccessController.getContext();
 
     private Camera defaultCamera;
 
@@ -399,8 +394,8 @@ public class Scene implements EventTarget {
                         }
 
                         @Override
-                        public void processKeyEvent(Scene scene, KeyEvent e) {
-                            scene.processKeyEvent(e);
+                        public boolean processKeyEvent(Scene scene, KeyEvent e) {
+                            return scene.processKeyEvent(e);
                         }
 
                         @Override
@@ -567,11 +562,11 @@ public class Scene implements EventTarget {
     private void doCSSPass() {
         final Parent sceneRoot = getRoot();
         //
-        // RT-17547: when the tree is synchronized, the dirty bits are
+        // JDK-8120624: when the tree is synchronized, the dirty bits are
         // are cleared but the cssFlag might still be something other than
         // clean.
         //
-        // Before RT-17547, the code checked the dirty bit. But this is
+        // Before JDK-8120624, the code checked the dirty bit. But this is
         // superfluous since the dirty bit will be set if the flag is not clean,
         // but the flag will never be anything other than clean if the dirty
         // bit is not set. The dirty bit is still needed, however, since setting
@@ -831,7 +826,7 @@ public class Scene implements EventTarget {
         setAllowPGAccess(true);
 
         Toolkit tk = Toolkit.getToolkit();
-        peer = windowPeer.createTKScene(isDepthBufferInternal(), getAntiAliasingInternal(), acc);
+        peer = windowPeer.createTKScene(isDepthBufferInternal(), getAntiAliasingInternal());
         PerformanceTracker.logEvent("Scene.initPeer TKScene created");
         peer.setTKSceneListener(new ScenePeerListener());
         peer.setTKScenePaintListener(new ScenePeerPaintListener());
@@ -1408,7 +1403,6 @@ public class Scene implements EventTarget {
     private static List<Runnable> snapshotRunnableListB;
     private static List<Runnable> snapshotRunnableList;
 
-    @SuppressWarnings("removal")
     static void addSnapshotRunnable(final Runnable runnable) {
         Toolkit.getToolkit().checkFxUserThread();
 
@@ -1442,13 +1436,7 @@ public class Scene implements EventTarget {
             Toolkit.getToolkit().addPostSceneTkPulseListener(snapshotPulseListener);
         }
 
-        final AccessControlContext acc = AccessController.getContext();
-        snapshotRunnableList.add(() -> {
-            AccessController.doPrivileged((PrivilegedAction<Void>) () -> {
-                runnable.run();
-                return null;
-            }, acc);
-        });
+        snapshotRunnableList.add(runnable);
         Toolkit.getToolkit().requestNextPulse();
     }
 
@@ -1620,7 +1608,7 @@ public class Scene implements EventTarget {
         @Override
         protected void onChanged(Change<String> c) {
             StyleManager.getInstance().stylesheetsChanged(Scene.this, c);
-            // RT-9784 - if stylesheet is removed, reset styled properties to
+            // JDK-8110059 - if stylesheet is removed, reset styled properties to
             // their initial value.
             c.reset();
             while(c.next()) {
@@ -2181,7 +2169,7 @@ public class Scene implements EventTarget {
         traverse(node, Direction.NEXT, TraversalMethod.DEFAULT);
     }
 
-    void processKeyEvent(KeyEvent e) {
+    boolean processKeyEvent(KeyEvent e) {
         if (dndGesture != null) {
             if (!dndGesture.processKey(e)) {
                 dndGesture = null;
@@ -2192,9 +2180,11 @@ public class Scene implements EventTarget {
         final EventTarget eventTarget =
                 (sceneFocusOwner != null && sceneFocusOwner.getScene() == Scene.this) ? sceneFocusOwner : Scene.this;
 
+        if (eventTarget == null) return false;
+
         // send the key event to the current focus owner or to scene if
         // the focus owner is not set
-        Event.fireEvent(eventTarget, e);
+        return EventUtil.fireEvent(eventTarget, e) == null;
     }
 
     void requestFocus(Node node, boolean focusVisible) {
@@ -2713,9 +2703,9 @@ public class Scene implements EventTarget {
 
 
         @Override
-        public void keyEvent(KeyEvent keyEvent)
+        public boolean keyEvent(KeyEvent keyEvent)
         {
-            processKeyEvent(keyEvent);
+            return processKeyEvent(keyEvent);
         }
 
         @Override
@@ -3083,16 +3073,8 @@ public class Scene implements EventTarget {
                 DragEvent dragEvent =
                         new DragEvent(DragEvent.ANY, dndGesture.dragboard, x, y, screenX, screenY,
                                 transferMode, null, null, pick(x, y));
-                // Data dropped to the app can be accessed without restriction
-                DragboardHelper.setDataAccessRestriction(dndGesture.dragboard, false);
 
-                TransferMode tm;
-                try {
-                    tm = dndGesture.processTargetDrop(dragEvent);
-                } finally {
-                    DragboardHelper.setDataAccessRestriction(
-                            dndGesture.dragboard, true);
-                }
+                TransferMode tm = dndGesture.processTargetDrop(dragEvent);
 
                 if (dndGesture.source == null) {
                     dndGesture.dragboard = null;
@@ -3226,15 +3208,7 @@ public class Scene implements EventTarget {
                                 mouseEvent.getSource(), target,
                                 MouseEvent.DRAG_DETECTED);
 
-                        try {
-                            fireEvent(target, detectedEvent);
-                        } finally {
-                            // Putting data to dragboard finished, restrict access to them
-                            if (dragboard != null) {
-                                DragboardHelper.setDataAccessRestriction(
-                                        dragboard, true);
-                            }
-                        }
+                        fireEvent(target, detectedEvent);
                     }
 
                     dragDetectedProcessed();
@@ -3262,15 +3236,7 @@ public class Scene implements EventTarget {
             processingDragDetected();
 
             final EventTarget target = de.getPickResult().getIntersectedNode();
-            try {
-                fireEvent(target != null ? target : Scene.this, me);
-            } finally {
-                // Putting data to dragboard finished, restrict access to them
-                if (dragboard != null) {
-                    DragboardHelper.setDataAccessRestriction(
-                            dragboard, true);
-                }
-            }
+            fireEvent(target != null ? target : Scene.this, me);
 
             dragDetectedProcessed();
 
@@ -3479,9 +3445,6 @@ public class Scene implements EventTarget {
                 dragboard = createDragboard(null, true);
             }
 
-            // The app can see what it puts to dragboard without restriction
-            DragboardHelper.setDataAccessRestriction(dragboard, false);
-
             this.source = source;
             potentialTarget = source;
             sourceTransferModes = t;
@@ -3531,14 +3494,7 @@ public class Scene implements EventTarget {
                         new DragEvent(DragEvent.ANY, dndGesture.dragboard, x, y, screenX, screenY,
                         transferMode, null, null, null);
 
-                // DRAG_DONE event is delivered to gesture source, it can access
-                // its own data without restriction
-                DragboardHelper.setDataAccessRestriction(dndGesture.dragboard, false);
-                try {
-                    dndGesture.processDropEnd(dragEvent);
-                } finally {
-                    DragboardHelper.setDataAccessRestriction(dndGesture.dragboard, true);
-                }
+                dndGesture.processDropEnd(dragEvent);
                 dndGesture = null;
             }
         }
@@ -6241,10 +6197,8 @@ public class Scene implements EventTarget {
      *                                                                         *
      **************************************************************************/
 
-    @SuppressWarnings("removal")
     private static final NodeOrientation defaultNodeOrientation =
-        AccessController.doPrivileged(
-                (PrivilegedAction<Boolean>) () -> Boolean.getBoolean("javafx.scene.nodeOrientation.RTL")) ? NodeOrientation.RIGHT_TO_LEFT : NodeOrientation.INHERIT;
+        Boolean.getBoolean("javafx.scene.nodeOrientation.RTL") ? NodeOrientation.RIGHT_TO_LEFT : NodeOrientation.INHERIT;
 
     /**
      * Node orientation describes the flow of visual data within a node.
@@ -6443,11 +6397,6 @@ public class Scene implements EventTarget {
         if (accessible == null) {
             accessible = Application.GetApplication().createAccessible();
             accessible.setEventHandler(new Accessible.EventHandler() {
-                @SuppressWarnings("removal")
-                @Override public AccessControlContext getAccessControlContext() {
-                    return getPeer().getAccessControlContext();
-                }
-
                 @Override public Object getAttribute(AccessibleAttribute attribute,
                                                      Object... parameters) {
                     switch (attribute) {

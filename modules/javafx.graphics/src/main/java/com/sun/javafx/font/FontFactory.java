@@ -52,11 +52,6 @@ public interface FontFactory {
     public String[] getFontFullNames();
     public String[] getFontFullNames(String family);
 
-    /*
-     * Indicates permission to load an embedded font
-     */
-    public boolean hasPermission();
-
     /**
      * Loads a font from the specified input stream.
      * If the load is successful such that the stream can be

@@ -235,6 +235,11 @@ jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved)
                                                                      name:NSApplicationDidChangeScreenParametersNotification
                                                                    object:nil];
 
+                        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                              selector:@selector(platformPreferencesDidChange)
+                                                              name:NSPreferredScrollerStyleDidChangeNotification
+                                                              object:nil];
+
                         [[NSDistributedNotificationCenter defaultCenter] addObserver:self
                                                                          selector:@selector(platformPreferencesDidChange)
                                                                          name:@"AppleInterfaceThemeChangedNotification"
@@ -244,6 +249,12 @@ jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved)
                                                                          selector:@selector(platformPreferencesDidChange)
                                                                          name:@"AppleColorPreferencesChangedNotification"
                                                                          object:nil];
+
+                        [[[NSWorkspace sharedWorkspace] notificationCenter]
+                            addObserver:self
+                            selector:@selector(platformPreferencesDidChange)
+                            name:NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification
+                            object:nil];
 
                         // localMonitor = [NSEvent addLocalMonitorForEventsMatchingMask: NSRightMouseDownMask
                         //                                                      handler:^(NSEvent *incomingEvent) {

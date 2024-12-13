@@ -478,6 +478,7 @@ public final class Platform {
      *     <tbody>
      *         <tr><td>{@code Windows.SPI.HighContrast}</td><td>{@link Boolean}</td></tr>
      *         <tr><td>{@code Windows.SPI.HighContrastColorScheme}</td><td>{@link String}</td></tr>
+     *         <tr><td>{@code Windows.SPI.ClientAreaAnimation}</td><td>{@link Boolean}</td></tr>
      *         <tr><td>{@code Windows.SysColor.COLOR_3DFACE}</td><td>{@link Color}</td></tr>
      *         <tr><td>{@code Windows.SysColor.COLOR_BTNTEXT}</td><td>{@link Color}</td></tr>
      *         <tr><td>{@code Windows.SysColor.COLOR_GRAYTEXT}</td><td>{@link Color}</td></tr>
@@ -495,6 +496,8 @@ public final class Platform {
      *         <tr><td>{@code Windows.UIColor.AccentLight1}</td><td>{@link Color}</td></tr>
      *         <tr><td>{@code Windows.UIColor.AccentLight2}</td><td>{@link Color}</td></tr>
      *         <tr><td>{@code Windows.UIColor.AccentLight3}</td><td>{@link Color}</td></tr>
+     *         <tr><td>{@code Windows.UISettings.AdvancedEffectsEnabled}</td><td>{@link Boolean}</td></tr>
+     *         <tr><td>{@code Windows.UISettings.AutoHideScrollBars}</td><td>{@link Boolean}</td></tr>
      *         <tr></tr>
      *     </tbody>
      * </table>
@@ -547,6 +550,9 @@ public final class Platform {
      *         <tr><td>{@code macOS.NSColor.systemRedColor}</td><td>{@link Color}</td></tr>
      *         <tr><td>{@code macOS.NSColor.systemTealColor}</td><td>{@link Color}</td></tr>
      *         <tr><td>{@code macOS.NSColor.systemYellowColor}</td><td>{@link Color}</td></tr>
+     *         <tr><td>{@code macOS.NSWorkspace.accessibilityDisplayShouldReduceMotion}</td><td>{@link Boolean}</td></tr>
+     *         <tr><td>{@code macOS.NSWorkspace.accessibilityDisplayShouldReduceTransparency}</td><td>{@link Boolean}</td></tr>
+     *         <tr><td>{@code macOS.NSScroller.preferredScrollerStyle}</td><td>{@link String}</td></tr>
      *         <tr></tr>
      *     </tbody>
      * </table>
@@ -572,13 +578,58 @@ public final class Platform {
      *         <tr><td>{@code GTK.warning_color}</td><td>{@link Color}</td></tr>
      *         <tr><td>{@code GTK.error_color}</td><td>{@link Color}</td></tr>
      *         <tr><td>{@code GTK.success_color}</td><td>{@link Color}</td></tr>
+     *         <tr><td>{@code GTK.enable_animations}</td><td>{@link Boolean}</td></tr>
+     *         <tr><td>{@code GTK.overlay_scrolling}</td><td>{@link Boolean}</td></tr>
      *         <tr></tr>
      *     </tbody>
      * </table>
      *
      * @since 22
      */
-    public interface Preferences extends ObservableMap<String, Object> {
+    public sealed interface Preferences extends ObservableMap<String, Object>
+            permits com.sun.javafx.application.preferences.PlatformPreferences {
+
+        /**
+         * Specifies whether applications should always show scroll bars. If not set, an application may
+         * choose to hide scroll bars that are not actively used, or make them smaller or less noticeable.
+         * <p>
+         * If the platform does not report this preference, this property defaults to {@code false}.
+         *
+         * @return the {@code persistentScrollBars} property
+         * @defaultValue {@code false}
+         * @since 24
+         */
+        ReadOnlyBooleanProperty persistentScrollBarsProperty();
+
+        boolean isPersistentScrollBars();
+
+        /**
+         * Specifies whether applications should minimize the amount of non-essential animations,
+         * reducing discomfort for users who experience motion sickness or vertigo.
+         * <p>
+         * If the platform does not report this preference, this property defaults to {@code false}.
+         *
+         * @return the {@code reducedMotion} property
+         * @defaultValue {@code false}
+         * @since 24
+         */
+        ReadOnlyBooleanProperty reducedMotionProperty();
+
+        boolean isReducedMotion();
+
+        /**
+         * Specifies whether applications should minimize the amount of transparent or translucent
+         * layer effects, which can help to increase contrast and readability for some users.
+         * <p>
+         * If the platform does not report this preference, this property defaults to {@code false}.
+         *
+         * @return the {@code reducedTransparency} property
+         * @defaultValue {@code false}
+         * @since 24
+         */
+        ReadOnlyBooleanProperty reducedTransparencyProperty();
+
+        boolean isReducedTransparency();
 
         /**
          * The platform color scheme, which specifies whether applications should prefer light text on

@@ -25,14 +25,15 @@
 
 #include "PlatformSupport.h"
 #include "RoActivationSupport.h"
-#include <windows.ui.viewmanagement.h>
 #include <tuple>
 
 using namespace Microsoft::WRL;
+using namespace ABI::Windows::Foundation;
 using namespace ABI::Windows::UI;
 using namespace ABI::Windows::UI::ViewManagement;
 
-PlatformSupport::PlatformSupport(JNIEnv* env) : env(env), initialized(false), preferences(NULL)
+PlatformSupport::PlatformSupport(JNIEnv* env, jobject application)
+    : env(env), application(application), initialized(false), preferences(NULL)
 {
     javaClasses.Object = (jclass)env->FindClass("java/lang/Object");
     if (CheckAndClearException(env)) return;
@@ -75,7 +76,47 @@ PlatformSupport::PlatformSupport(JNIEnv* env) : env(env), initialized(false), pr
     javaIDs.Boolean.falseID = env->GetStaticFieldID(javaClasses.Boolean, "FALSE", "Ljava/lang/Boolean;");
     if (CheckAndClearException(env)) return;
 
+    // Mandatory fields are now initialized, after this point we will initialize optional APIs.
     initialized = true;
+
+    tryInitializeRoActivationSupport();
+
+    if (!isRoActivationSupported()) {
+        return;
+    }
+
+    try {
+        RO_CHECKED("RoActivateInstance",
+                   RoActivateInstance(hstring("Windows.UI.ViewManagement.UISettings"), (IInspectable**)&settings));
+    } catch (RoException const&) {
+        // If an activation exception occurs, it probably means that we're on a Windows system
+        // that doesn't support the UISettings API. This is not a problem, it simply means that
+        // we don't report the UISettings properties back to the JavaFX application.
+        return;
+    }
+
+    try {
+        ComPtr<IUISettings5> settings5;
+        RO_CHECKED("IUISettings::QueryInterface<IUISettings5>",
+                   settings->QueryInterface<IUISettings5>(&settings5));
+
+        EventRegistrationToken token;
+        settings5->add_AutoHideScrollBarsChanged(
+            Callback<ITypedEventHandler<UISettings*, UISettingsAutoHideScrollBarsChangedEventArgs*>>(
+                [this](IUISettings*, IUISettingsAutoHideScrollBarsChangedEventArgs*) {
+                    updatePreferences();
+                    return S_OK;
+                }).Get(),
+            &token);
+    } catch (RoException const&) {
+        return;
+    }
+}
+
+PlatformSupport::~PlatformSupport()
+{
+    settings = nullptr;
+    uninitializeRoActivationSupport();
 }
 
 jobject PlatformSupport::collectPreferences() const
@@ -87,15 +128,15 @@ jobject PlatformSupport::collectPreferences() const
     jobject prefs = env->NewObject(javaClasses.HashMap, javaIDs.HashMap.init);
     if (CheckAndClearException(env)) return NULL;
 
-    queryHighContrastScheme(prefs);
+    querySystemParameters(prefs);
     querySystemColors(prefs);
-    queryUIColors(prefs);
+    queryUISettings(prefs);
     return prefs;
 }
 
-bool PlatformSupport::updatePreferences(jobject application) const
+bool PlatformSupport::updatePreferences() const
 {
-    if (!initialized || application == NULL) {
+    if (!initialized) {
         return false;
     }
 
@@ -124,7 +165,22 @@ bool PlatformSupport::updatePreferences(jobject application) const
     return false;
 }
 
-void PlatformSupport::queryHighContrastScheme(jobject properties) const
+bool PlatformSupport::onSettingChanged(WPARAM wParam, LPARAM lParam) const
+{
+    switch ((UINT)wParam) {
+        case SPI_SETHIGHCONTRAST:
+        case SPI_SETCLIENTAREAANIMATION:
+            return updatePreferences();
+    }
+
+    if (lParam != NULL && wcscmp(LPCWSTR(lParam), L"ImmersiveColorSet") == 0) {
+        return updatePreferences();
+    }
+
+    return false;
+}
+
+void PlatformSupport::querySystemParameters(jobject properties) const
 {
     HIGHCONTRAST contrastInfo;
     contrastInfo.cbSize = sizeof(HIGHCONTRAST);
@@ -138,6 +194,10 @@ void PlatformSupport::queryHighContrastScheme(jobject properties) const
         putBoolean(properties, "Windows.SPI.HighContrast", false);
         putString(properties, "Windows.SPI.HighContrastColorScheme", (const char*)NULL);
     }
+
+    BOOL value;
+    ::SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, &value, 0);
+    putBoolean(properties, "Windows.SPI.ClientAreaAnimation", value);
 }
 
 void PlatformSupport::querySystemColors(jobject properties) const
@@ -153,20 +213,16 @@ void PlatformSupport::querySystemColors(jobject properties) const
     putColor(properties, "Windows.SysColor.COLOR_WINDOWTEXT", GetSysColor(COLOR_WINDOWTEXT));
 }
 
-void PlatformSupport::queryUIColors(jobject properties) const
+void PlatformSupport::queryUISettings(jobject properties) const
 {
-    if (!isRoActivationSupported()) {
+    if (!this->settings) {
         return;
     }
 
     try {
-        ComPtr<IUISettings> settings;
-        RO_CHECKED("RoActivateInstance",
-                   RoActivateInstance(hstring("Windows.UI.ViewManagement.UISettings"), (IInspectable**)&settings));
-
         ComPtr<IUISettings3> settings3;
         RO_CHECKED("IUISettings::QueryInterface<IUISettings3>",
-                   settings->QueryInterface<IUISettings3>(&settings3));
+                   this->settings->QueryInterface<IUISettings3>(&settings3));
 
         Color background, foreground, accentDark3, accentDark2, accentDark1, accent,
               accentLight1, accentLight2, accentLight3;
@@ -192,9 +248,30 @@ void PlatformSupport::queryUIColors(jobject properties) const
         putColor(properties, "Windows.UIColor.AccentLight2", accentLight2);
         putColor(properties, "Windows.UIColor.AccentLight3", accentLight3);
     } catch (RoException const&) {
-        // If an activation exception occurs, it probably means that we're on a Windows system
-        // that doesn't support the UISettings API. This is not a problem, it simply means that
-        // we don't report the UISettings properties back to the JavaFX application.
+        return;
+    }
+
+    try {
+        ComPtr<IUISettings4> settings4;
+        RO_CHECKED("IUISettings::QueryInterface<IUISettings4>",
+                   this->settings->QueryInterface<IUISettings4>(&settings4));
+
+        unsigned char value;
+        settings4->get_AdvancedEffectsEnabled(&value);
+        putBoolean(properties, "Windows.UISettings.AdvancedEffectsEnabled", value);
+    } catch (RoException const&) {
+        return;
+    }
+
+    try {
+        ComPtr<IUISettings5> settings5;
+        RO_CHECKED("IUISettings::QueryInterface<IUISettings5>",
+                   this->settings->QueryInterface<IUISettings5>(&settings5));
+
+        unsigned char value;
+        settings5->get_AutoHideScrollBars(&value);
+        putBoolean(properties, "Windows.UISettings.AutoHideScrollBars", value);
+    } catch (RoException const&) {
         return;
     }
 }

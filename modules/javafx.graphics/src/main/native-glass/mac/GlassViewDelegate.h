@@ -27,7 +27,6 @@
 #import <jni.h>
 
 #import "GlassHostView.h"
-#import "GlassFullscreenWindow.h"
 #import "GlassDragSource.h"
 #import "GlassDraggingSource.h"
 #import "GlassAccessible.h"
@@ -64,16 +63,11 @@ typedef enum GestureMaskType {
 
     NSEvent                 *lastEvent;
 
-    // The last processed key event
-    NSEvent                 *s_lastKeyEvent;
-
     GlassDraggingSource     *draggingSource;
     NSInteger               lastTrackingNumber;
 
 @public
     jobject                 jView;
-    // not nil when we create a new FS window ourselves
-    GlassFullscreenWindow   *fullscreenWindow;
 }
 
 - (id)initWithView:(NSView*)view withJview:(jobject)jview;
@@ -89,7 +83,7 @@ typedef enum GestureMaskType {
 - (void)sendJavaMouseEvent:(NSEvent *)theEvent;
 - (void)resetMouseTracking;
 - (void)sendJavaMenuEvent:(NSEvent *)theEvent;
-- (void)sendJavaKeyEvent:(NSEvent *)event isDown:(BOOL)isDown;
+- (BOOL)sendJavaKeyEvent:(NSEvent *)event isDown:(BOOL)isDown;
 - (void)sendJavaModifierKeyEvent:(NSEvent *)theEvent;
 - (void)sendJavaGestureEvent:(NSEvent *)theEvent type:(int)type;
 - (void)sendJavaGestureBeginEvent:(NSEvent *)theEvent;
