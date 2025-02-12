@@ -552,6 +552,17 @@ static GstFlowReturn hls_progress_buffer_getrange(GstPad *pad, GstObject *parent
                 size, buffer);
     }
 
+    // Set desontinue to signal format change
+    if (element->cache_discont[element->cache_read_index])
+    {
+        if (result == GST_FLOW_OK && (*buffer) != NULL)
+        {
+            (*buffer) = gst_buffer_make_writable((*buffer));
+            GST_BUFFER_FLAG_SET((*buffer), GST_BUFFER_FLAG_DISCONT);
+        }
+        element->cache_discont[element->cache_read_index] = FALSE;
+    }
+
     // Check if we still has something to read. If no signal that we done with
     // cached segment and move to the next one.
     if (!cache_has_enough_data(element->cache[element->cache_read_index]))
@@ -562,6 +573,8 @@ static GstFlowReturn hls_progress_buffer_getrange(GstPad *pad, GstObject *parent
         send_hls_not_full_message(element);
         g_cond_signal(&element->del_cond);
     }
+
+    // Signal EOS if set and nothing to read.
     if (!element->cache_read_ready[element->cache_read_index])
     {
         if (element->is_eos)

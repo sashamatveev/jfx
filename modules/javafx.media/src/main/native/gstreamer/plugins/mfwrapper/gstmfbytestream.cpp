@@ -42,8 +42,10 @@ template <class T> void SafeRelease(T **ppT)
     #define TRACE
 #endif // ENABLE_TRACE
 
-CGSTMFByteStream::CGSTMFByteStream(QWORD qwLength, GstPad *pSinkPad)
+CGSTMFByteStream::CGSTMFByteStream(HRESULT &hr, QWORD qwLength, GstPad *pSinkPad)
 {
+    hr = S_OK;
+
     // If length is not provided we assume it is fMP4
     if (qwLength == -1)
         m_bfMP4 = TRUE;
@@ -66,10 +68,16 @@ CGSTMFByteStream::CGSTMFByteStream(QWORD qwLength, GstPad *pSinkPad)
     m_bWaitForEvent = FALSE;
     m_bIsEOS = FALSE;
     m_bIsEOSEventReceived = FALSE;
+    m_bIsReload = FALSE;
 
     m_pSinkPad = pSinkPad;
 
     InitializeCriticalSection(&m_csLock);
+
+    // IMFMediaEventGenerator
+    InitializeCriticalSection(&m_csEventLock);
+    hr = MFCreateEventQueue(&m_pEventQueue);
+    m_bEventQueueShutdown = FALSE;
 }
 
 CGSTMFByteStream::~CGSTMFByteStream()
@@ -131,6 +139,11 @@ void CGSTMFByteStream::ClearEOS()
 {
     m_bIsEOS = FALSE;
     m_bIsEOSEventReceived = FALSE;
+}
+
+BOOL CGSTMFByteStream::IsReload()
+{
+    return m_bIsReload;
 }
 
 // IMFByteStream
@@ -225,7 +238,7 @@ HRESULT CGSTMFByteStream::GetCurrentPosition(QWORD *pqwPosition)
 
 HRESULT CGSTMFByteStream::GetLength(QWORD *pqwLength)
 {
-    if (m_bfMP4)
+    if (m_bfMP4 && !m_bIsEOS)
     {
 //        if (m_qwLength == 0)
             (*pqwLength) = -1;
@@ -344,6 +357,68 @@ HRESULT CGSTMFByteStream::Write(const BYTE *pb, ULONG cb, ULONG *pcbWritten)
     return E_NOTIMPL;
 }
 
+// IMFMediaEventGenerator
+HRESULT CGSTMFByteStream::BeginGetEvent(IMFAsyncCallback *pCallback, IUnknown *pState)
+{
+    EnterCriticalSection(&m_csEventLock);
+
+    HRESULT hr = CheckEventQueueShutdown();
+    if (SUCCEEDED(hr))
+    {
+        hr = m_pEventQueue->BeginGetEvent(pCallback, pState);
+    }
+
+    LeaveCriticalSection(&m_csEventLock);
+    return hr;
+}
+
+HRESULT CGSTMFByteStream::EndGetEvent(IMFAsyncResult *pResult, IMFMediaEvent **ppEvent)
+{
+    EnterCriticalSection(&m_csEventLock);
+
+    HRESULT hr = CheckEventQueueShutdown();
+    if (SUCCEEDED(hr))
+    {
+        hr = m_pEventQueue->EndGetEvent(pResult, ppEvent);
+    }
+
+    LeaveCriticalSection(&m_csEventLock);
+    return hr;
+}
+
+HRESULT CGSTMFByteStream::GetEvent(DWORD dwFlags, IMFMediaEvent **ppEvent)
+{
+    // m_pEventQueue::GetEvent() can block, so do not hold m_csEventLock.
+    IMFMediaEventQueue *pQueue = NULL;
+
+    EnterCriticalSection(&m_csEventLock);
+    HRESULT hr = CheckEventQueueShutdown();
+    if (SUCCEEDED(hr))
+    {
+        pQueue = m_pEventQueue;
+        pQueue->AddRef();
+    }
+    LeaveCriticalSection(&m_csEventLock);
+
+    if (SUCCEEDED(hr))
+        hr = m_pEventQueue->GetEvent(dwFlags, ppEvent);
+
+    SafeRelease(&m_pEventQueue);
+    return hr;
+}
+
+HRESULT CGSTMFByteStream::QueueEvent(MediaEventType met, REFGUID extendedType, HRESULT hrStatus, const PROPVARIANT *pvValue)
+{
+    EnterCriticalSection(&m_csEventLock);
+
+    HRESULT hr = CheckEventQueueShutdown();
+    if (SUCCEEDED(hr))
+        hr = m_pEventQueue->QueueEventParamVar(met, extendedType, hrStatus, pvValue);
+
+    LeaveCriticalSection(&m_csEventLock);
+    return hr;
+}
+
 // IUnknown
 HRESULT CGSTMFByteStream::QueryInterface(REFIID riid, void **ppvObject)
 {
@@ -353,11 +428,15 @@ HRESULT CGSTMFByteStream::QueryInterface(REFIID riid, void **ppvObject)
     }
     else if (riid == IID_IUnknown)
     {
-        *ppvObject = static_cast<IUnknown *>(this);
+        *ppvObject = static_cast<IUnknown *>(static_cast<IMFByteStream *>(this));
     }
     else if (riid == IID_IMFByteStream)
     {
         *ppvObject = static_cast<IMFByteStream *>(this);
+    }
+    else if (riid == IID_IMFMediaEventGenerator)
+    {
+        *ppvObject = static_cast<IMFMediaEventGenerator *>(this);
     }
     else
     {
@@ -378,9 +457,35 @@ ULONG CGSTMFByteStream::Release()
     ULONG uCount = InterlockedDecrement(&m_ulRefCount);
     if (uCount == 0)
     {
+        ShutdownEventQueue();
         delete this;
     }
     return uCount;
+}
+
+// IMFMediaEventGenerator
+HRESULT CGSTMFByteStream::CheckEventQueueShutdown() const
+{
+    return (m_bEventQueueShutdown ? MF_E_SHUTDOWN : S_OK);
+}
+
+HRESULT CGSTMFByteStream::ShutdownEventQueue()
+{
+    EnterCriticalSection(&m_csEventLock);
+
+    HRESULT hr = CheckEventQueueShutdown();
+    if (SUCCEEDED(hr))
+    {
+        if (m_pEventQueue)
+            hr = m_pEventQueue->Shutdown();
+
+        SafeRelease(&m_pEventQueue);
+
+        m_bEventQueueShutdown = TRUE;
+    }
+
+    LeaveCriticalSection(&m_csEventLock);
+    return hr;
 }
 
 HRESULT CGSTMFByteStream::ReadData()
@@ -439,10 +544,6 @@ HRESULT CGSTMFByteStream::ReadData()
         }
         else if (ret == GST_FLOW_OK)
         {
-            // Set EOS flag, so we can complete and signal EOS
-            if (m_bIsEOSEventReceived)
-                m_bIsEOS = TRUE;
-
             hr = PushDataBuffer(buf);
             if (FAILED(hr))
                 return CompleteReadData(E_FAIL);
@@ -464,6 +565,28 @@ HRESULT CGSTMFByteStream::PushDataBuffer(GstBuffer* pBuffer)
 
     if (pBuffer == NULL)
         return E_POINTER;
+
+    // Set EOS flag, so we can complete and signal EOS
+    if (m_bIsEOSEventReceived)
+        m_bIsEOS = TRUE;
+
+    // If we received discont buffer it means format change and this buffer
+    // contains new data. For example when we do bitrate switch in HLS.
+    // Do not push this buffer and just ignore it. Once mfdemux reads all
+    // samples it will reload MF Source Reader, so it can re-initialize for
+    // new stream. hlsprogressbuffer will provide this buffer again after
+    // we reload, but without discont flag, since it should be cleared once
+    // provided by hlsprogressbuffer.
+    if (GST_BUFFER_FLAG_IS_SET(pBuffer, GST_BUFFER_FLAG_DISCONT))
+    {
+        // INLINE - gst_buffer_unref()
+        gst_buffer_unref(pBuffer);
+        m_bIsReload = TRUE;
+        m_bIsEOS = TRUE;
+        m_qwLength = m_qwPosition;
+        QueueEvent(MEByteStreamCharacteristicsChanged, GUID_NULL, S_OK, NULL);
+        return S_OK;
+    }
 
     GstMapInfo info;
     gboolean unmap = FALSE;

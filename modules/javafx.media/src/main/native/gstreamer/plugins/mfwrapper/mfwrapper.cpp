@@ -197,7 +197,7 @@ static void gst_mfwrapper_init(GstMFWrapper *decoder)
     // Initialize Media Foundation
     bool bCallCoUninitialize = true;
 
-    if (FAILED(CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE)))
+    if (FAILED(CoInitializeEx(NULL, COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE)))
         bCallCoUninitialize = false;
 
     decoder->hr_mfstartup = MFStartup(MF_VERSION, MFSTARTUP_LITE);

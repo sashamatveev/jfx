@@ -38,10 +38,6 @@
 
 #include "fxplugins_common.h"
 
-// {00000000-0000-0000-0000-000000000000}
-static const GUID GUID_NULL =
-{ 0x00000000, 0x0000, 0x0000, { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } };
-
 typedef struct {
     JFX_CODEC_ID codecID;
     UINT32 uiChannels;
@@ -96,6 +92,7 @@ struct _GstMFDemux
     CGSTMFByteStream *pGSTMFByteStream;
     IMFByteStream *pIMFByteStream;
     IMFSourceReader *pSourceReader;
+    IMFMediaEventGenerator *pIMediaEvent;
 
     LONGLONG llDuration;
 

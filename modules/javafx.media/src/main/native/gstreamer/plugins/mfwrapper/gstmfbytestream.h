@@ -29,12 +29,18 @@
 #include <gst/gst.h>
 
 #include <mfapi.h>
+#include <mfidl.h>
 #include <mfobjects.h>
+#include <mferror.h>
 
-class CGSTMFByteStream : public IMFByteStream
+// {00000000-0000-0000-0000-000000000000}
+static const GUID GUID_NULL =
+{ 0x00000000, 0x0000, 0x0000, { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } };
+
+class CGSTMFByteStream : public IMFByteStream, IMFMediaEventGenerator
 {
 public:
-    CGSTMFByteStream(QWORD qwLength, GstPad *pSinkPad);
+    CGSTMFByteStream(HRESULT &hr, QWORD qwLength, GstPad *pSinkPad);
     ~CGSTMFByteStream();
 
     HRESULT ReadRangeAvailable();
@@ -43,6 +49,7 @@ public:
     HRESULT CompleteReadData(HRESULT hr);
     void SignalEOS();
     void ClearEOS();
+    BOOL IsReload();
 
     // IMFByteStream
     HRESULT BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback, IUnknown *punkState);
@@ -61,12 +68,22 @@ public:
     HRESULT SetLength(QWORD qwLength);
     HRESULT Write(const BYTE *pb, ULONG cb, ULONG *pcbWritten);
 
+    // IMFMediaEventGenerator
+    HRESULT BeginGetEvent(IMFAsyncCallback* pCallback, IUnknown* pState);
+    HRESULT EndGetEvent(IMFAsyncResult* pResult, IMFMediaEvent** ppEvent);
+    HRESULT GetEvent(DWORD dwFlags, IMFMediaEvent** ppEvent);
+    HRESULT QueueEvent(MediaEventType met, REFGUID extendedType, HRESULT hrStatus, const PROPVARIANT* pvValue);
+
     // IUnknown
     HRESULT QueryInterface(REFIID riid, void **ppvObject);
     ULONG AddRef();
     ULONG Release();
 
 private:
+    // IMFMediaEventGenerator
+    HRESULT CheckEventQueueShutdown() const;
+    HRESULT ShutdownEventQueue();
+
     HRESULT ReadData();
     HRESULT PushDataBuffer(GstBuffer *pBuffer);
     HRESULT PrepareWaitForData();
@@ -99,10 +116,16 @@ private:
     BOOL m_bIsEOSEventReceived;
     // Set to true if source is fragmented MP4
     BOOL m_bfMP4;
+    BOOL m_bIsReload;
 
     CRITICAL_SECTION m_csLock;
 
     GstPad *m_pSinkPad;
+
+    // IMFMediaEventGenerator
+    CRITICAL_SECTION m_csEventLock;
+    IMFMediaEventQueue *m_pEventQueue;
+    BOOL m_bEventQueueShutdown;
 };
 
 #endif // __GST_MF_BYTESTREAM_H__

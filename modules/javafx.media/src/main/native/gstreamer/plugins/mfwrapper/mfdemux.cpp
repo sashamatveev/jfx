@@ -205,6 +205,7 @@ static void gst_mfdemux_init(GstMFDemux *demux)
     demux->pGSTMFByteStream = NULL;
     demux->pIMFByteStream = NULL;
     demux->pSourceReader = NULL;
+    demux->pIMediaEvent = NULL;
 
     demux->llDuration = -1;
 
@@ -231,7 +232,7 @@ static void gst_mfdemux_init(GstMFDemux *demux)
     // Initialize Media Foundation
     bool bCallCoUninitialize = true;
 
-    if (FAILED(CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE)))
+    if (FAILED(CoInitializeEx(NULL, COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE)))
         bCallCoUninitialize = false;
 
     demux->hr_mfstartup = MFStartup(MF_VERSION, MFSTARTUP_LITE);
@@ -260,14 +261,9 @@ static void gst_mfdemux_dispose(GObject* object)
 
     g_mutex_clear(&demux->lock);
 
-    SafeRelease(&demux->pSourceReader);
     SafeRelease(&demux->pIMFByteStream);
-
-    // SafeRelease(&demux->pDecoderOutput);
-    // SafeRelease(&demux->pDecoder);
-
-    // SafeRelease(&demux->pColorConvertOutput);
-    // SafeRelease(&demux->pColorConvert);
+    SafeRelease(&demux->pIMediaEvent);
+    SafeRelease(&demux->pSourceReader);
 
     if (demux->audioFormat.codec_data != NULL)
     {
@@ -532,6 +528,7 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
             }
             g_mutex_unlock(&demux->lock);
 
+            demux->is_eos = FALSE;
             // Clear EOS on byte stream, since SourceReader will start
             // reading it during seek.
             if (demux->pGSTMFByteStream)
@@ -627,6 +624,29 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
     return ret;
 }
 
+static void mfdemux_reload_demux(GstMFDemux *demux)
+{
+    SafeRelease(&demux->pIMFByteStream);
+    SafeRelease(&demux->pIMediaEvent);
+    SafeRelease(&demux->pSourceReader);
+
+    if (demux->audioFormat.codec_data != NULL)
+    {
+        // INLINE - gst_buffer_unref()
+        gst_buffer_unref(demux->audioFormat.codec_data);
+        demux->audioFormat.codec_data = NULL;
+    }
+
+    if (demux->videoFormat.codec_data != NULL)
+    {
+        // INLINE - gst_buffer_unref()
+        gst_buffer_unref(demux->videoFormat.codec_data);
+        demux->videoFormat.codec_data = NULL;
+    }
+
+    demux->is_demux_initialized = FALSE;
+}
+
 static gboolean mfdemux_init_demux(GstMFDemux *demux, GstCaps *caps)
 {
     if (demux->is_demux_initialized)
@@ -641,8 +661,8 @@ static gboolean mfdemux_init_demux(GstMFDemux *demux, GstCaps *caps)
         demux->send_new_segment = TRUE; // Lenght is know, which means it is
         // HTTP/FILE, so we need to provide segment. HLS will send it is own.
 
-    demux->pGSTMFByteStream = new (nothrow) CGSTMFByteStream((QWORD)data_length, demux->sink_pad);
-    if (demux->pGSTMFByteStream == NULL)
+    demux->pGSTMFByteStream = new (nothrow) CGSTMFByteStream(hr, (QWORD)data_length, demux->sink_pad);
+    if (FAILED(hr) || demux->pGSTMFByteStream == NULL)
         return FALSE;
 
     hr = demux->pGSTMFByteStream->QueryInterface(IID_IMFByteStream, (void**)&demux->pIMFByteStream);
@@ -652,6 +672,10 @@ static gboolean mfdemux_init_demux(GstMFDemux *demux, GstCaps *caps)
     hr = MFCreateSourceReaderFromByteStream(demux->pIMFByteStream, NULL, &demux->pSourceReader);
     if (FAILED(hr) || demux->pSourceReader == NULL)
         return FALSE;
+
+    // hr = demux->pSourceReader->QueryInterface(IID_IMFMediaEventGenerator, (void**)&demux->pIMediaEvent);
+    // if (FAILED(hr) || demux->pIMediaEvent == NULL)
+    //     return FALSE;
 
     // Get duration
     PROPVARIANT pv = {0};
@@ -881,34 +905,6 @@ static gboolean mfdemux_configure_audio_src_pad(GstMFDemux *demux)
     return TRUE;
 }
 
-// static IMFMediaType* mfdemux_get_raw_video_format(IMFMediaType *pMediaType)
-// {
-//     HRESULT hr = S_OK;
-//     IMFMediaType *pOutputType = NULL;
-//     UINT32 uiWidth = 0;
-//     UINT32 uiHeight = 0;
-//     UINT32 numerator = 0;
-//     UINT32 denominator = 0;
-
-//     MFGetAttributeSize(pMediaType, MF_MT_FRAME_SIZE, &uiWidth, &uiHeight);
-//     MFGetAttributeRatio(pMediaType, MF_MT_FRAME_RATE, &numerator, &denominator);
-
-//     hr = MFCreateMediaType(&pOutputType);
-//     if (SUCCEEDED(hr))
-//         hr = pOutputType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
-
-//     if (SUCCEEDED(hr))
-//         hr = pOutputType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12);
-
-//     if (SUCCEEDED(hr))
-//         hr = MFSetAttributeSize(pOutputType, MF_MT_FRAME_SIZE, uiWidth, uiHeight);
-
-//     if (SUCCEEDED(hr))
-//         hr = MFSetAttributeRatio(pOutputType, MF_MT_FRAME_RATE, numerator, denominator);
-
-//     return pOutputType;
-// }
-
 static gboolean mfdemux_configure_video_stream(GstMFDemux *demux, gboolean *hasVideo)
 {
     HRESULT hr = S_OK;
@@ -962,9 +958,6 @@ static gboolean mfdemux_configure_video_stream(GstMFDemux *demux, gboolean *hasV
                                demux->videoFormat.codecID);
     }
 
-    // IMFMediaType *pOutputType = mfdemux_get_raw_video_format(pMediaType);
-    // hr = demux->pSourceReader->SetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, NULL, pOutputType);
-    // SafeRelease(&pOutputType);
     SafeRelease(&pMediaType);
 
     if (FAILED(hr))
@@ -1269,7 +1262,7 @@ static void mfdemux_loop(GstPad * pad)
         return;
     }
 
-    if (demux->pSourceReader == NULL)
+    if (demux->pGSTMFByteStream == NULL || demux->pSourceReader == NULL)
     {
         gst_pad_pause_task(pad);
         return;
@@ -1292,10 +1285,24 @@ static void mfdemux_loop(GstPad * pad)
     {
         if ((dwStreamFlags & MF_SOURCE_READERF_ENDOFSTREAM) == MF_SOURCE_READERF_ENDOFSTREAM)
         {
-            // Deliver EOS to all src pads, since source reader reports it for
-            // last read only and not for each stream.
-            mfdemux_push_sink_event(demux, gst_event_new_eos());
-            result = GST_FLOW_EOS;
+            // Before delivering EOS, check if we actuallyy doing reload during
+            // format change. During format change GSTMFByteStream will signal
+            // Source Reader EOS, so it can produce all samples and will set
+            // reload flag for us. There is no better way to handle such case
+            // for now.
+            if (demux->pGSTMFByteStream->IsReload())
+            {
+                mfdemux_reload_demux(demux);
+                // Keep going after realod. Source Reader will get re-initialized
+                // when we re-enter mfdemux_loop().
+            }
+            else
+            {
+                // Deliver EOS to all src pads, since source reader reports it for
+                // last read only and not for each stream.
+                mfdemux_push_sink_event(demux, gst_event_new_eos());
+                result = GST_FLOW_EOS;
+            }
         }
         else if ((dwStreamFlags & MF_SOURCE_READERF_ERROR) == MF_SOURCE_READERF_ERROR)
         {
@@ -1321,11 +1328,11 @@ static void mfdemux_loop(GstPad * pad)
         if (pSample != NULL)
         {
             {
-            LONGLONG nsSampleTime = 0;
-            DWORD cbTotalLength = 0;
-            pSample->GetSampleTime(&nsSampleTime);
-            pSample->GetTotalLength(&cbTotalLength);
-            g_print("Received sample from reader: nsSampleTime: %lld cbTotalLength: %d\n", nsSampleTime, cbTotalLength);
+                LONGLONG nsSampleTime = 0;
+                DWORD cbTotalLength = 0;
+                pSample->GetSampleTime(&nsSampleTime);
+                pSample->GetTotalLength(&cbTotalLength);
+                g_print("Received sample from reader: nsSampleTime: %lld cbTotalLength: %d\n", nsSampleTime, cbTotalLength);
             }
 
             GstPad *src_pad = mfdemux_get_src_pad(demux, dwActualStreamIndex);
