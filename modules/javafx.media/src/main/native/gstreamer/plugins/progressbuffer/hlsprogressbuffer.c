@@ -58,6 +58,7 @@ struct _HLSProgressBuffer
     gboolean      cache_write_ready[NUM_OF_CACHED_SEGMENTS];
     gboolean      cache_read_ready[NUM_OF_CACHED_SEGMENTS];
     gboolean      cache_discont[NUM_OF_CACHED_SEGMENTS];
+    gboolean      cache_header[NUM_OF_CACHED_SEGMENTS];
     gint          cache_write_index;
     gint          cache_read_index;
 
@@ -198,6 +199,7 @@ static void hls_progress_buffer_init(HLSProgressBuffer *element)
         element->cache_write_ready[i] = TRUE;
         element->cache_read_ready[i] = FALSE;
         element->cache_discont[i] = FALSE;
+        element->cache_header[i] = FALSE;
     }
 
     element->cache_write_index = -1;
@@ -382,6 +384,10 @@ static GstFlowReturn hls_progress_buffer_chain(GstPad *pad, GstObject *parent, G
         {
             element->cache_discont[element->cache_write_index] = TRUE;
         }
+        if (GST_BUFFER_FLAG_IS_SET(data, GST_BUFFER_FLAG_HEADER))
+        {
+            element->cache_header[element->cache_write_index] = TRUE;
+        }
 
         cache_write_buffer(element->cache[element->cache_write_index], data);
         g_cond_signal(&element->add_cond);
@@ -483,6 +489,13 @@ static void hls_progress_buffer_loop(void *data)
             element->cache_discont[element->cache_read_index] = FALSE;
         }
 
+        if (element->cache_header[element->cache_read_index])
+        {
+            buffer = gst_buffer_make_writable(buffer);
+            GST_BUFFER_FLAG_SET(buffer, GST_BUFFER_FLAG_HEADER);
+            element->cache_header[element->cache_read_index] = FALSE;
+        }
+
         if (read_position == element->cache_size[element->cache_read_index])
         {
             element->cache_write_ready[element->cache_read_index] = TRUE;
@@ -538,21 +551,13 @@ static GstFlowReturn hls_progress_buffer_getrange(GstPad *pad, GstObject *parent
     }
     else
     {
-        // // If descont flush demux and let it reconfigure
-        // if (element->cache_discont[element->cache_read_index])
-        // {
-        //     element->cache_discont[element->cache_read_index] = FALSE;
-        //     g_mutex_unlock(&element->lock);
-        //     return GST_FLOW_EOS;
-        // }
-
         // Read data as requested or less.
         result = cache_read_buffer_from_position2(
                 element->cache[element->cache_read_index], start_position,
                 size, buffer);
     }
 
-    // Set desontinue to signal format change
+    // Set flag GST_BUFFER_FLAG_DISCONT if needed
     if (element->cache_discont[element->cache_read_index])
     {
         if (result == GST_FLOW_OK && (*buffer) != NULL)
@@ -561,6 +566,17 @@ static GstFlowReturn hls_progress_buffer_getrange(GstPad *pad, GstObject *parent
             GST_BUFFER_FLAG_SET((*buffer), GST_BUFFER_FLAG_DISCONT);
         }
         element->cache_discont[element->cache_read_index] = FALSE;
+    }
+
+    // Set flag GST_BUFFER_FLAG_HEADER if needed
+    if (element->cache_header[element->cache_read_index])
+    {
+        if (result == GST_FLOW_OK && (*buffer) != NULL)
+        {
+            (*buffer) = gst_buffer_make_writable((*buffer));
+            GST_BUFFER_FLAG_SET((*buffer), GST_BUFFER_FLAG_HEADER);
+        }
+        element->cache_header[element->cache_read_index] = FALSE;
     }
 
     // Check if we still has something to read. If no signal that we done with

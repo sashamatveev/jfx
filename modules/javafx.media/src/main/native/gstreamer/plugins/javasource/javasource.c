@@ -100,6 +100,13 @@ struct _JavaSource
     gboolean      is_random_access; // property controlled
     gboolean      update;
     gboolean      discont;
+    gboolean      header; // Indicates that buffer contains header information
+    // needed to decode stream in this buffer (GST_BUFFER_FLAG_HEADER).
+    // This flag is currently used in HLS on Windows only to mark buffers
+    // when we have header during format change. Windows requires special
+    // handling for format change and just GST_BUFFER_FLAG_DISCONT will no be
+    // enough. We will still send GST_BUFFER_FLAG_DISCONT when format change.
+    // Other platforms will ignore GST_BUFFER_FLAG_HEADER for now.
 
     guint         mode; // property controlled and/or internally
     gboolean      stop_on_pause; // property controlled
@@ -590,6 +597,7 @@ next_event:
                     {
                         result = -1 * result;
                         element->discont = TRUE;
+                        element->header = TRUE;
                     }
 
                     gst_segment_init (&segment, GST_FORMAT_BYTES);
@@ -650,6 +658,13 @@ next_event:
                             buffer = gst_buffer_make_writable (buffer);
                             GST_BUFFER_FLAG_SET (buffer, GST_BUFFER_FLAG_DISCONT);
                             element->discont = FALSE;
+                        }
+
+                        if (element->header)
+                        {
+                            buffer = gst_buffer_make_writable (buffer);
+                            GST_BUFFER_FLAG_SET (buffer, GST_BUFFER_FLAG_HEADER);
+                            element->header = FALSE;
                         }
 
                         // Set caps to mimetype if provided, we need to do this before pushing buffer,
@@ -886,6 +901,7 @@ static GstStateChangeReturn java_source_change_state (GstElement *e,
             element->position = 0;
             element->position_time = 0;
             element->discont = FALSE;
+            element->header = FALSE;
             if ((element->mode & MODE_HLS) == MODE_HLS)
                 element->update = FALSE;
             else

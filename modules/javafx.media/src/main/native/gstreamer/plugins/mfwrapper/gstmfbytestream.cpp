@@ -83,6 +83,7 @@ CGSTMFByteStream::CGSTMFByteStream(HRESULT &hr, QWORD qwLength, GstPad *pSinkPad
 CGSTMFByteStream::~CGSTMFByteStream()
 {
     DeleteCriticalSection(&m_csLock);
+    DeleteCriticalSection(&m_csEventLock);
 }
 
 HRESULT CGSTMFByteStream::ReadRangeAvailable()
@@ -570,14 +571,14 @@ HRESULT CGSTMFByteStream::PushDataBuffer(GstBuffer* pBuffer)
     if (m_bIsEOSEventReceived)
         m_bIsEOS = TRUE;
 
-    // If we received discont buffer it means format change and this buffer
+    // If we received header buffer it means format change and this buffer
     // contains new data. For example when we do bitrate switch in HLS.
     // Do not push this buffer and just ignore it. Once mfdemux reads all
     // samples it will reload MF Source Reader, so it can re-initialize for
     // new stream. hlsprogressbuffer will provide this buffer again after
-    // we reload, but without discont flag, since it should be cleared once
+    // we reload, but without header flag, since it should be cleared once
     // provided by hlsprogressbuffer.
-    if (GST_BUFFER_FLAG_IS_SET(pBuffer, GST_BUFFER_FLAG_DISCONT))
+    if (GST_BUFFER_FLAG_IS_SET(pBuffer, GST_BUFFER_FLAG_HEADER))
     {
         // INLINE - gst_buffer_unref()
         gst_buffer_unref(pBuffer);

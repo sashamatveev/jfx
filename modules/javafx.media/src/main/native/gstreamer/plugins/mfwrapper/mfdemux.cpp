@@ -194,6 +194,7 @@ static void gst_mfdemux_init(GstMFDemux *demux)
 
     demux->is_flushing = FALSE;
     demux->is_eos = FALSE;
+    demux->is_fMP4 = FALSE;
     demux->is_demux_initialized = FALSE;
     demux->force_discontinuity = FALSE;
     demux->send_new_segment = FALSE;
@@ -656,10 +657,19 @@ static gboolean mfdemux_init_demux(GstMFDemux *demux, GstCaps *caps)
 
     gint64 data_length = 0;
     if (!gst_pad_peer_query_duration(demux->sink_pad, GST_FORMAT_BYTES, &data_length))
+    {
         data_length = -1; // -1 if unknown for MF (QWORD is ULONGLONG)
+        demux->is_fMP4 = TRUE;
+    }
+    else if (demux->is_fMP4)
+    {
+        data_length = -1;
+    }
     else
+    {
         demux->send_new_segment = TRUE; // Lenght is know, which means it is
         // HTTP/FILE, so we need to provide segment. HLS will send it is own.
+    }
 
     demux->pGSTMFByteStream = new (nothrow) CGSTMFByteStream(hr, (QWORD)data_length, demux->sink_pad);
     if (FAILED(hr) || demux->pGSTMFByteStream == NULL)
@@ -871,8 +881,9 @@ static gboolean mfdemux_configure_audio_src_pad(GstMFDemux *demux)
     if (!demux)
         return FALSE;
 
+    // If pad exist just reconfigure caps.
     if (demux->audio_src_pad)
-        return TRUE;
+        return mfdemux_configure_audio_src_caps(demux);
 
     if (demux->audioFormat.codecID != JFX_CODEC_ID_AAC)
         return TRUE; // Just ignore unknown audio stream
@@ -894,7 +905,7 @@ static gboolean mfdemux_configure_audio_src_pad(GstMFDemux *demux)
         return FALSE;
     }
 
-    gst_pad_use_fixed_caps(demux->audio_src_pad);
+    //gst_pad_use_fixed_caps(demux->audio_src_pad);
 
     if (!gst_element_add_pad(GST_ELEMENT(demux), demux->audio_src_pad)) {
         // Pad will be unref even if gst_element_add_pad() fails
@@ -1023,8 +1034,9 @@ static gboolean mfdemux_configure_video_src_pad(GstMFDemux *demux)
     if (!demux)
         return FALSE;
 
+    // If pad exist just reconfigure caps.
     if (demux->video_src_pad)
-        return TRUE;
+        return mfdemux_configure_video_src_caps(demux);
 
     if (demux->videoFormat.codecID != JFX_CODEC_ID_H264 &&
         demux->videoFormat.codecID != JFX_CODEC_ID_HEVC)
@@ -1049,7 +1061,7 @@ static gboolean mfdemux_configure_video_src_pad(GstMFDemux *demux)
         return FALSE;
     }
 
-    gst_pad_use_fixed_caps(demux->video_src_pad);
+    //gst_pad_use_fixed_caps(demux->video_src_pad);
 
     if (!gst_element_add_pad(GST_ELEMENT(demux), demux->video_src_pad)) {
         // Pad will be unref even if gst_element_add_pad() fails
