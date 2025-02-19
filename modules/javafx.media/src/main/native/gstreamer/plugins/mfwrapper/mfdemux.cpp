@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2024, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -206,7 +206,6 @@ static void gst_mfdemux_init(GstMFDemux *demux)
     demux->pGSTMFByteStream = NULL;
     demux->pIMFByteStream = NULL;
     demux->pSourceReader = NULL;
-    demux->pIMediaEvent = NULL;
 
     demux->llDuration = -1;
 
@@ -260,11 +259,11 @@ static void gst_mfdemux_dispose(GObject* object)
 {
     GstMFDemux *demux = GST_MFDEMUX(object);
 
-    g_mutex_clear(&demux->lock);
+    if (demux->pGSTMFByteStream != NULL)
+        demux->pGSTMFByteStream->Shutdown();
 
-    SafeRelease(&demux->pIMFByteStream);
-    SafeRelease(&demux->pIMediaEvent);
     SafeRelease(&demux->pSourceReader);
+    SafeRelease(&demux->pIMFByteStream);
 
     if (demux->audioFormat.codec_data != NULL)
     {
@@ -286,6 +285,8 @@ static void gst_mfdemux_dispose(GObject* object)
         gst_event_unref(demux->cached_segment_event);
         demux->cached_segment_event = NULL;
     }
+
+    g_mutex_clear(&demux->lock);
 
     if (demux->hr_mfstartup == S_OK)
         MFShutdown();
@@ -627,9 +628,11 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
 
 static void mfdemux_reload_demux(GstMFDemux *demux)
 {
-    SafeRelease(&demux->pIMFByteStream);
-    SafeRelease(&demux->pIMediaEvent);
+    if (demux->pGSTMFByteStream != NULL)
+        demux->pGSTMFByteStream->Shutdown();
+
     SafeRelease(&demux->pSourceReader);
+    SafeRelease(&demux->pIMFByteStream);
 
     if (demux->audioFormat.codec_data != NULL)
     {
@@ -682,10 +685,6 @@ static gboolean mfdemux_init_demux(GstMFDemux *demux, GstCaps *caps)
     hr = MFCreateSourceReaderFromByteStream(demux->pIMFByteStream, NULL, &demux->pSourceReader);
     if (FAILED(hr) || demux->pSourceReader == NULL)
         return FALSE;
-
-    // hr = demux->pSourceReader->QueryInterface(IID_IMFMediaEventGenerator, (void**)&demux->pIMediaEvent);
-    // if (FAILED(hr) || demux->pIMediaEvent == NULL)
-    //     return FALSE;
 
     // Get duration
     PROPVARIANT pv = {0};

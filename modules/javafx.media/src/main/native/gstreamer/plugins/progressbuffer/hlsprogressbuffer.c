@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2024, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -26,8 +26,6 @@
 #include "hlsprogressbuffer.h"
 #include "cache.h"
 #include "fxplugins_common.h"
-
-//#define NO_RANGE_REQUEST -1
 
 /***********************************************************************************
  * Debug category init
@@ -73,10 +71,6 @@ struct _HLSProgressBuffer
     GstClockTime  buffer_pts;
 
     gboolean is_pull_mode;
-
-//    gint64        range_start;
-//    gint64        range_stop;
-//    GThread      *monitor_thread;
 };
 
 struct _HLSProgressBufferClass
@@ -216,9 +210,6 @@ static void hls_progress_buffer_init(HLSProgressBuffer *element)
     element->buffer_pts = GST_CLOCK_TIME_NONE;
 
     element->is_pull_mode = FALSE;
-    // element->range_start = NO_RANGE_REQUEST;
-    // element->range_stop = NO_RANGE_REQUEST;
-    // element->monitor_thread = NULL;
 }
 
 /**
@@ -247,7 +238,7 @@ static void hls_progress_buffer_finalize (GObject *object)
 /**
  * hls_progress_buffer_activatepush_src()
  *
- * Set the source pad's push mode.
+ * Set the source pad's push or pull mode.
  */
 static gboolean hls_progress_buffer_activatemode(GstPad *pad, GstObject *parent, GstPadMode mode, gboolean active)
 {
@@ -256,14 +247,12 @@ static gboolean hls_progress_buffer_activatemode(GstPad *pad, GstObject *parent,
 
     switch (mode) {
         case GST_PAD_MODE_PUSH:
+            element->is_pull_mode = FALSE;
             res = hls_progress_buffer_activatepush_src(pad, parent, active);
-            if (res)
-                element->is_pull_mode = FALSE;
             break;
         case GST_PAD_MODE_PULL:
+            element->is_pull_mode = TRUE;
             res = hls_progress_buffer_activatepull_src(pad, parent, active);
-            if (res)
-                element->is_pull_mode = TRUE;
             break;
         default:
             /* unknown scheduling mode */
@@ -350,9 +339,6 @@ static void hls_progress_buffer_flush_data(HLSProgressBuffer *element)
             element->cache_read_ready[i] = FALSE;
         }
     }
-
-    // element->range_start = NO_RANGE_REQUEST;
-    // element->range_stop = NO_RANGE_REQUEST;
 
     g_mutex_unlock(&element->lock);
 }
@@ -624,7 +610,7 @@ static gboolean hls_progress_buffer_query(GstPad *pad, GstObject *parent, GstQue
             // query duration again for second segment. In HLS we report new
             // segment in time units, so "mfdemux" cannot use it. "javasource"
             // will handle duration query in GST_FORMAT_TIME and will report
-            // length of entire HLS stream in time units. In such design down
+            // length of entire HLS stream in time units. With such design down
             // stream can figure out length of stream in time units and length
             // of segment in bytes for parsing.
             if (format == GST_FORMAT_BYTES)
