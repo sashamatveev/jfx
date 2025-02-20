@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2024, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2021, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,6 +27,8 @@
 #define __MF_WRAPPER_H__
 
 #include <gst/gst.h>
+
+#include "mfgstbuffer.h"
 
 #include <mfapi.h>
 #include <mferror.h>
@@ -82,9 +84,13 @@ struct _GstMFWrapper
 
     IMFTransform *pDecoder;
     IMFSample *pDecoderOutput;
+    CMFGSTBuffer *pDecoderBuffer;
 
     IMFTransform *pColorConvert[MAX_COLOR_CONVERT];
     IMFSample *pColorConvertOutput[MAX_COLOR_CONVERT];
+    CMFGSTBuffer *pColorConvertBuffer[MAX_COLOR_CONVERT];
+
+    GstBufferPool *pool;
 
     BYTE *header;
     gsize header_size;

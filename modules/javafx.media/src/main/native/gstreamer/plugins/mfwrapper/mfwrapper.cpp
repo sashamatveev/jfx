@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2024, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2021, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,7 +32,8 @@
 #include <string.h>
 #include <stdio.h>
 
-#include <mfwrapper.h>
+#include "mfwrapper.h"
+
 #include <mfidl.h>
 #include <Wmcodecdsp.h>
 
@@ -40,6 +41,12 @@
 
 #define PTS_DEBUG 1
 #define MEDIA_FORMAT_DEBUG 0
+
+// 3 buffers is enough for rendering. During testing 2 buffers is actually
+// enough, but in some case 3 were allocated.
+#define MIN_BUFFERS 3
+// 6 buffers max, just in case.
+#define MAX_BUFFERS 6
 
 enum
 {
@@ -207,12 +214,16 @@ static void gst_mfwrapper_init(GstMFWrapper *decoder)
 
     decoder->pDecoder = NULL;
     decoder->pDecoderOutput = NULL;
+    decoder->pDecoderBuffer = NULL;
 
     for (int i = 0; i < MAX_COLOR_CONVERT; i++)
     {
         decoder->pColorConvert[i] = NULL;
         decoder->pColorConvertOutput[i] = NULL;
+        decoder->pColorConvertBuffer[i] = NULL;
     }
+
+    decoder->pool = NULL;
 
     decoder->header = NULL;
     decoder->header_size = 0;
@@ -231,13 +242,26 @@ static void gst_mfwrapper_dispose(GObject* object)
 {
     GstMFWrapper *decoder = GST_MFWRAPPER(object);
 
+    // No need to free pDecoderBuffer, it will be release when interface is
+    // release by MF.
     SafeRelease(&decoder->pDecoderOutput);
     SafeRelease(&decoder->pDecoder);
 
     for (int i = 0; i < MAX_COLOR_CONVERT; i++)
     {
+        // No need to free pColorConvertBuffer, it will be release when interface is
+        // release by MF.
         SafeRelease(&decoder->pColorConvertOutput[i]);
         SafeRelease(&decoder->pColorConvert[i]);
+    }
+
+    if (decoder->pool)
+    {
+        if (gst_buffer_pool_is_active(decoder->pool))
+            gst_buffer_pool_set_active(decoder->pool, FALSE);
+
+        gst_object_unref(decoder->pool);
+        decoder->pool = NULL;
     }
 
     if (decoder->hr_mfstartup == S_OK)
@@ -297,6 +321,33 @@ static gboolean mfwrapper_is_decoder_by_codec_id_supported(GstMFWrapper *decoder
         return FALSE;
 }
 
+static HRESULT mfwrapper_create_sample(IMFSample **ppSample, DWORD dwSize, CMFGSTBuffer **ppMFGSTBuffer)
+{
+    if (ppSample == NULL || dwSize == 0 || ppMFGSTBuffer == NULL)
+        return E_INVALIDARG;
+
+    HRESULT hr = MFCreateSample(ppSample);
+    if (SUCCEEDED(hr))
+    {
+        (*ppMFGSTBuffer) = new (nothrow) CMFGSTBuffer(dwSize);
+        if ((*ppMFGSTBuffer) == NULL)
+            return E_OUTOFMEMORY;
+
+        IMFMediaBuffer *pBuffer = NULL;
+        hr = (*ppMFGSTBuffer)->QueryInterface(IID_IMFMediaBuffer, (void **)&pBuffer);
+        if (FAILED(hr) || pBuffer == NULL)
+        {
+            delete (*ppMFGSTBuffer);
+            return E_NOINTERFACE;
+        }
+
+        (*ppSample)->AddBuffer(pBuffer);
+        SafeRelease(&pBuffer);
+    }
+
+    return S_OK;
+}
+
 static void mfwrapper_set_src_caps(GstMFWrapper *decoder)
 {
     GstCaps *srcCaps = NULL;
@@ -354,17 +405,11 @@ static void mfwrapper_set_src_caps(GstMFWrapper *decoder)
 
     if (SUCCEEDED(hr))
     {
-        if (!((outputStreamInfo.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES) || (outputStreamInfo.dwFlags & MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES)))
+        if (!((outputStreamInfo.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES) ||
+              (outputStreamInfo.dwFlags & MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES)))
         {
-            hr = MFCreateSample(&decoder->pDecoderOutput);
-            if (SUCCEEDED(hr))
-            {
-                IMFMediaBuffer *pBuffer = NULL;
-                hr = MFCreateMemoryBuffer(outputStreamInfo.cbSize, &pBuffer);
-                if (SUCCEEDED(hr))
-                    hr = decoder->pDecoderOutput->AddBuffer(pBuffer);
-                SafeRelease(&pBuffer);
-            }
+            hr = mfwrapper_create_sample(&decoder->pDecoderOutput,
+                    outputStreamInfo.cbSize, &decoder->pDecoderBuffer);
         }
     }
 }
@@ -783,18 +828,21 @@ static HRESULT mfwrapper_configure_colorconvert_output_type(GstMFWrapper *decode
 // color convert with best possible output type.
 // ppColorConvert - Receives pointer to color convert.
 // ppColorConvertOutput - Receives pointer to color convert output buffer.
-// outputType - Will be set to color convert output type (IYUV or NV12)
+// outputType - Will be set to color convert output type (IYUV or NV12).
+// ppMFGSTBuffer - Receives CMFGSTBuffer object related to ppColorConvertOutput.
 static HRESULT mfwrapper_init_colorconvert(GstMFWrapper *decoder,
                                            IMFTransform *pInput,
                                            IMFTransform **ppColorConvert,
                                            IMFSample **ppColorConvertOutput,
-                                           GUID *outputType)
+                                           GUID *outputType,
+                                           CMFGSTBuffer **ppMFGSTBuffer)
 {
     DWORD dwStatus = 0;
     MFT_OUTPUT_STREAM_INFO outputStreamInfo;
 
     if (pInput == NULL || ppColorConvert == NULL ||
-        ppColorConvertOutput == NULL || outputType == NULL)
+        ppColorConvertOutput == NULL || outputType == NULL ||
+        ppMFGSTBuffer == NULL)
     {
         return E_POINTER;
     }
@@ -814,15 +862,8 @@ static HRESULT mfwrapper_init_colorconvert(GstMFWrapper *decoder,
         if (!((outputStreamInfo.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES) ||
               (outputStreamInfo.dwFlags & MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES)))
         {
-            hr = MFCreateSample(ppColorConvertOutput);
-            if (SUCCEEDED(hr))
-            {
-                IMFMediaBuffer *pBuffer = NULL;
-                hr = MFCreateMemoryBuffer(outputStreamInfo.cbSize, &pBuffer);
-                if (SUCCEEDED(hr))
-                    hr = (*ppColorConvertOutput)->AddBuffer(pBuffer);
-                SafeRelease(&pBuffer);
-            }
+            hr = mfwrapper_create_sample(ppColorConvertOutput,
+                outputStreamInfo.cbSize, ppMFGSTBuffer);
         }
     }
 
@@ -843,6 +884,118 @@ static HRESULT mfwrapper_init_colorconvert(GstMFWrapper *decoder,
         hr = (*ppColorConvert)->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, NULL);
 
     return hr;
+}
+
+static void mfwrapper_get_gst_buffer_src(GstBuffer **ppBuffer, long lSize,
+        sCallbackData *pCallbackData)
+{
+    GstFlowReturn ret = GST_FLOW_OK;
+    GstMFWrapper *decoder = (GstMFWrapper*)pCallbackData->pCallbackData;
+    if (decoder == NULL || decoder->pool == NULL)
+    {
+        (*ppBuffer) = NULL;
+        return;
+    }
+
+    ret = gst_buffer_pool_acquire_buffer(decoder->pool, ppBuffer, NULL);
+    if (ret == GST_FLOW_OK)
+        return;
+
+    // Pool might fail in case of flushing, but MF still might want buffer.
+    // It is better to give buffer to MF just in case, then fail
+    // CMFGSTBuffer::Lock().
+    (*ppBuffer) = gst_buffer_new_allocate(NULL, lSize, NULL);
+}
+
+// Gets max length of configured media buffer we using for final rendering from
+// decoder or color convert.
+static HRESULT mfwrapper_get_media_buffer_max_length(GstMFWrapper *decoder, DWORD *pdwMaxLength)
+{
+    HRESULT hr = S_OK;
+
+    if (decoder == NULL || pdwMaxLength == NULL)
+        return E_INVALIDARG;
+
+    CMFGSTBuffer *pBuffer = NULL;
+    if (decoder->pColorConvertOutput[COLOR_CONVERT_IYUV] != NULL)
+        pBuffer = decoder->pColorConvertBuffer[COLOR_CONVERT_IYUV];
+    else if (decoder->pDecoderOutput != NULL)
+        pBuffer = decoder->pDecoderBuffer;
+
+    if (pBuffer == NULL)
+        return E_FAIL;
+
+    return pBuffer->GetMaxLength(pdwMaxLength);
+}
+
+static HRESULT mfwrapper_configure_media_buffer(GstMFWrapper *decoder)
+{
+    HRESULT hr = S_OK;
+
+    CMFGSTBuffer *pBuffer = NULL;
+    if (decoder->pColorConvertOutput[COLOR_CONVERT_IYUV] != NULL)
+        pBuffer = decoder->pColorConvertBuffer[COLOR_CONVERT_IYUV];
+    else if (decoder->pDecoderOutput != NULL)
+        pBuffer = decoder->pDecoderBuffer;
+
+    if (pBuffer == NULL)
+        return E_FAIL;
+
+    sCallbackData callbackData;
+    ZeroMemory(&callbackData, sizeof(sCallbackData));
+    callbackData.pCallbackData = (void*)decoder;
+    hr = pBuffer->SetCallbackData(&callbackData);
+    if (FAILED(hr))
+        return hr;
+
+    hr = pBuffer->SetGetGstBufferCallback(&mfwrapper_get_gst_buffer_src);
+    if (FAILED(hr))
+        return hr;
+
+    return hr;
+}
+
+static HRESULT mfwrapper_configure_buffer_pool(GstMFWrapper *decoder)
+{
+    // Free old pool. We might be called during format change.
+    if (decoder->pool)
+    {
+        if (gst_buffer_pool_is_active(decoder->pool))
+            gst_buffer_pool_set_active(decoder->pool, FALSE);
+
+        gst_object_unref(decoder->pool);
+        decoder->pool = NULL;
+    }
+
+    DWORD dwMaxLength = 0;
+    HRESULT hr = mfwrapper_get_media_buffer_max_length(decoder, &dwMaxLength);
+    // Pool only supports upto unsigned int, but buffer can be unsigned long.
+    if (FAILED(hr) || dwMaxLength > G_MAXUINT)
+        return E_FAIL;
+
+    decoder->pool = gst_buffer_pool_new();
+    if (decoder->pool == NULL)
+        return E_FAIL;
+
+    GstStructure *config = gst_buffer_pool_get_config(decoder->pool);
+    if (config == NULL)
+        return E_FAIL;
+
+    // By now we should caps configured on pad, so just use it.
+    GstCaps *caps = gst_pad_get_current_caps(decoder->srcpad);
+    if (caps == NULL)
+        return E_FAIL;
+
+    gst_buffer_pool_config_set_params(config, caps,
+            (guint)dwMaxLength, MIN_BUFFERS, MAX_BUFFERS);
+    gst_caps_unref(caps); // INLINE - gst_caps_unref()
+
+    if (!gst_buffer_pool_set_config(decoder->pool, config))
+        return E_FAIL;
+
+    gst_buffer_pool_set_active(decoder->pool, TRUE);
+
+    return S_OK;
 }
 
 static HRESULT mfwrapper_set_decoder_output_type(GstMFWrapper *decoder,
@@ -933,28 +1086,42 @@ static HRESULT mfwrapper_set_decoder_output_type(GstMFWrapper *decoder,
         IMFTransform *pColorConvert = NULL;
         IMFSample *pColorConvertOutput = NULL;
         GUID outputType;
+        CMFGSTBuffer *pMFGSTBuffer = NULL;
 
         hr = mfwrapper_init_colorconvert(decoder, decoder->pDecoder,
-                    &pColorConvert, &pColorConvertOutput, &outputType);
+                    &pColorConvert, &pColorConvertOutput, &outputType, &pMFGSTBuffer);
         if (SUCCEEDED(hr) && IsEqualGUID(outputType, MFVideoFormat_NV12)) {
             decoder->pColorConvert[COLOR_CONVERT_NV12] = pColorConvert;
             decoder->pColorConvertOutput[COLOR_CONVERT_NV12] = pColorConvertOutput;
+            decoder->pColorConvertBuffer[COLOR_CONVERT_NV12] = pMFGSTBuffer;
 
             // We got NV12, so init second one for NV12->IYUV
             hr = mfwrapper_init_colorconvert(decoder,
                     decoder->pColorConvert[COLOR_CONVERT_NV12], &pColorConvert,
-                    &pColorConvertOutput, &outputType);
+                    &pColorConvertOutput, &outputType, &pMFGSTBuffer);
         }
 
         if (SUCCEEDED(hr) && IsEqualGUID(outputType, MFVideoFormat_IYUV)) {
             decoder->pColorConvert[COLOR_CONVERT_IYUV] = pColorConvert;
             decoder->pColorConvertOutput[COLOR_CONVERT_IYUV] = pColorConvertOutput;
+            decoder->pColorConvertBuffer[COLOR_CONVERT_IYUV] = pMFGSTBuffer;
         }
     }
 
     // Update caps on src pad in case if something changed
     if (SUCCEEDED(hr))
         mfwrapper_set_src_caps(decoder);
+
+    // By now we should have output sample created. Figure out which one we
+    // will use to deliver frames and update media buffer in this sample to
+    // use GStreamer memory directly.
+    if (SUCCEEDED(hr))
+        hr = mfwrapper_configure_media_buffer(decoder);
+
+    // Configure GStreamer buffer pool to avoid memory allocation for each
+    // buffer.
+    if (SUCCEEDED(hr))
+        hr = mfwrapper_configure_buffer_pool(decoder);
 
     return hr;
 }
@@ -1121,76 +1288,47 @@ static gboolean mfwrapper_convert_output(GstMFWrapper *decoder)
     return result;
 }
 
-static GstFlowReturn mfwrapper_deliver_sample(GstMFWrapper *decoder, IMFSample *pSample)
+static GstFlowReturn mfwrapper_deliver_sample(GstMFWrapper *decoder,
+        IMFSample *pSample, CMFGSTBuffer *pMFGSTBuffer)
 {
     GstFlowReturn ret = GST_FLOW_OK;
+    GstBuffer *pGstBuffer = NULL;
     LONGLONG llTimestamp = 0;
     LONGLONG llDuration = 0;
-    IMFMediaBuffer *pMediaBuffer = NULL;
-    BYTE *pBuffer = NULL;
-    DWORD cbMaxLength = 0;
-    DWORD cbCurrentLength = 0;
-    GstMapInfo info;
 
-    HRESULT hr = pSample->ConvertToContiguousBuffer(&pMediaBuffer);
+    if (decoder == NULL || pSample == NULL || pMFGSTBuffer == NULL)
+        return GST_FLOW_ERROR;
+
+    HRESULT hr = pMFGSTBuffer->GetGstBuffer(&pGstBuffer);
+    if (FAILED(hr))
+        return GST_FLOW_ERROR;
+
+    hr = pSample->GetSampleTime(&llTimestamp);
+    GST_BUFFER_TIMESTAMP(pGstBuffer) = llTimestamp * 100;
 
     if (SUCCEEDED(hr))
-        hr = pMediaBuffer->Lock(&pBuffer, &cbMaxLength, &cbCurrentLength);
-
-    if (SUCCEEDED(hr) && cbCurrentLength > 0)
     {
-        GstBuffer *pGstBuffer = gst_buffer_new_allocate(NULL, cbCurrentLength, NULL);
-        if (pGstBuffer == NULL || !gst_buffer_map(pGstBuffer, &info, GST_MAP_WRITE))
-        {
-            pMediaBuffer->Unlock();
-             if (pGstBuffer != NULL)
-                gst_buffer_unref(pGstBuffer); // INLINE - gst_buffer_unref()
-            return GST_FLOW_ERROR;
-        }
+        hr = pSample->GetSampleDuration(&llDuration);
+        GST_BUFFER_DURATION(pGstBuffer) = llDuration * 100;
+    }
 
-        memcpy(info.data, pBuffer, cbCurrentLength);
-        gst_buffer_unmap(pGstBuffer, &info);
-        gst_buffer_set_size(pGstBuffer, cbCurrentLength);
-
-        hr = pMediaBuffer->Unlock();
-        if (SUCCEEDED(hr))
-        {
-            hr = pSample->GetSampleTime(&llTimestamp);
-            GST_BUFFER_TIMESTAMP(pGstBuffer) = llTimestamp * 100;
-        }
-
-        if (SUCCEEDED(hr))
-        {
-            hr = pSample->GetSampleDuration(&llDuration);
-            GST_BUFFER_DURATION(pGstBuffer) = llDuration * 100;
-        }
-
-        if (SUCCEEDED(hr) && decoder->force_output_discontinuity)
-        {
-            pGstBuffer = gst_buffer_make_writable(pGstBuffer);
-            GST_BUFFER_FLAG_SET(pGstBuffer, GST_BUFFER_FLAG_DISCONT);
-            decoder->force_output_discontinuity = FALSE;
-        }
+    if (SUCCEEDED(hr) && decoder->force_output_discontinuity)
+    {
+        pGstBuffer = gst_buffer_make_writable(pGstBuffer);
+        GST_BUFFER_FLAG_SET(pGstBuffer, GST_BUFFER_FLAG_DISCONT);
+        decoder->force_output_discontinuity = FALSE;
+    }
 
 #if PTS_DEBUG
-        if (GST_BUFFER_TIMESTAMP_IS_VALID(pGstBuffer) && GST_BUFFER_DURATION_IS_VALID(pGstBuffer))
-            g_print("JFXMEDIA H265 %I64u %I64u\n", GST_BUFFER_TIMESTAMP(pGstBuffer), GST_BUFFER_DURATION(pGstBuffer));
-        else if (GST_BUFFER_TIMESTAMP_IS_VALID(pGstBuffer) && !GST_BUFFER_DURATION_IS_VALID(pGstBuffer))
-            g_print("JFXMEDIA H265 %I64u -1\n", GST_BUFFER_TIMESTAMP(pGstBuffer));
-        else
-            g_print("JFXMEDIA H265 -1\n");
+    if (GST_BUFFER_TIMESTAMP_IS_VALID(pGstBuffer) && GST_BUFFER_DURATION_IS_VALID(pGstBuffer))
+        g_print("JFXMEDIA H265 %I64u %I64u\n", GST_BUFFER_TIMESTAMP(pGstBuffer), GST_BUFFER_DURATION(pGstBuffer));
+    else if (GST_BUFFER_TIMESTAMP_IS_VALID(pGstBuffer) && !GST_BUFFER_DURATION_IS_VALID(pGstBuffer))
+        g_print("JFXMEDIA H265 %I64u -1\n", GST_BUFFER_TIMESTAMP(pGstBuffer));
+    else
+        g_print("JFXMEDIA H265 -1\n");
 #endif
 
-        ret = gst_pad_push(decoder->srcpad, pGstBuffer);
-    }
-    else if (SUCCEEDED(hr))
-    {
-        pMediaBuffer->Unlock();
-    }
-
-    SafeRelease(&pMediaBuffer);
-
-    return ret;
+    return gst_pad_push(decoder->srcpad, pGstBuffer);
 }
 
 static gint mfwrapper_process_output(GstMFWrapper *decoder)
@@ -1239,12 +1377,14 @@ static gint mfwrapper_process_output(GstMFWrapper *decoder)
                 {
                     // Deliver from IYUV color converter
                     ret = mfwrapper_deliver_sample(decoder,
-                                decoder->pColorConvertOutput[COLOR_CONVERT_IYUV]);
+                                decoder->pColorConvertOutput[COLOR_CONVERT_IYUV],
+                                decoder->pColorConvertBuffer[COLOR_CONVERT_IYUV]);
                 }
             }
             else
             {
-                ret = mfwrapper_deliver_sample(decoder, decoder->pDecoderOutput);
+                ret = mfwrapper_deliver_sample(decoder, decoder->pDecoderOutput,
+                            decoder->pDecoderBuffer);
             }
         }
     }
