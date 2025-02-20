@@ -674,7 +674,7 @@ static gboolean mfdemux_init_demux(GstMFDemux *demux, GstCaps *caps)
         // HTTP/FILE, so we need to provide segment. HLS will send it is own.
     }
 
-    demux->pGSTMFByteStream = new (nothrow) CGSTMFByteStream(hr, (QWORD)data_length, demux->sink_pad);
+    demux->pGSTMFByteStream = new (nothrow) CMFGSTByteStream(hr, (QWORD)data_length, demux->sink_pad);
     if (FAILED(hr) || demux->pGSTMFByteStream == NULL)
         return FALSE;
 

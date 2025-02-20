@@ -49,7 +49,7 @@
     <ClCompile Include="..\..\gstreamer\plugins\mfwrapper\mfdemux.cpp">
       <Filter>mfwrapper</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\gstreamer\plugins\mfwrapper\gstmfbytestream.cpp">
+    <ClCompile Include="..\..\gstreamer\plugins\mfwrapper\mfgstbytestream.cpp">
     <ClCompile Include="..\..\gstreamer\plugins\mfwrapper\mfgstbuffer.cpp">
       <Filter>mfwrapper</Filter>
     </ClCompile>
@@ -74,7 +74,7 @@
     <ClInclude Include="..\..\gstreamer\plugins\mfwrapper\mfdemux.h">
       <Filter>mfwrapper</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\gstreamer\plugins\mfwrapper\gstmfbytestream.h">
+    <ClInclude Include="..\..\gstreamer\plugins\mfwrapper\mfgstbytestream.h">
     <ClInclude Include="..\..\gstreamer\plugins\mfwrapper\mfgstbuffer.h">
       <Filter>mfwrapper</Filter>
     </ClInclude>

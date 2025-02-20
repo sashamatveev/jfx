@@ -23,7 +23,7 @@
  * questions.
  */
 
-#include "gstmfbytestream.h"
+#include "mfgstbytestream.h"
 
 #define ENABLE_TRACE 1
 
@@ -42,7 +42,7 @@ template <class T> void SafeRelease(T **ppT)
     #define TRACE
 #endif // ENABLE_TRACE
 
-CGSTMFByteStream::CGSTMFByteStream(HRESULT &hr, QWORD qwLength, GstPad *pSinkPad)
+CMFGSTByteStream::CMFGSTByteStream(HRESULT &hr, QWORD qwLength, GstPad *pSinkPad)
 {
     hr = S_OK;
 
@@ -80,18 +80,18 @@ CGSTMFByteStream::CGSTMFByteStream(HRESULT &hr, QWORD qwLength, GstPad *pSinkPad
     m_bEventQueueShutdown = FALSE;
 }
 
-CGSTMFByteStream::~CGSTMFByteStream()
+CMFGSTByteStream::~CMFGSTByteStream()
 {
     DeleteCriticalSection(&m_csLock);
     DeleteCriticalSection(&m_csEventLock);
 }
 
-void CGSTMFByteStream::Shutdown()
+void CMFGSTByteStream::Shutdown()
 {
     ShutdownEventQueue();
 }
 
-HRESULT CGSTMFByteStream::ReadRangeAvailable()
+HRESULT CMFGSTByteStream::ReadRangeAvailable()
 {
     Lock();
     BOOL bWaitForEvent = m_bWaitForEvent;
@@ -104,7 +104,7 @@ HRESULT CGSTMFByteStream::ReadRangeAvailable()
         return S_FALSE;
 }
 
-void CGSTMFByteStream::SetSegmentLength(QWORD qwSegmentLength, bool bForce)
+void CMFGSTByteStream::SetSegmentLength(QWORD qwSegmentLength, bool bForce)
 {
     Lock();
     if (bForce || m_bWaitForEvent)
@@ -121,14 +121,14 @@ void CGSTMFByteStream::SetSegmentLength(QWORD qwSegmentLength, bool bForce)
 // initialized otherwise), we can only issue seek on MF source reader if length
 // is known (HTTP/FILE). For HLS we wil forward seek event upstream to handle
 // seek.
-bool CGSTMFByteStream::IsSeekSupported()
+bool CMFGSTByteStream::IsSeekSupported()
 {
     return !m_bfMP4;
 }
 
-HRESULT CGSTMFByteStream::CompleteReadData(HRESULT hr)
+HRESULT CMFGSTByteStream::CompleteReadData(HRESULT hr)
 {
-    g_print("AMDEBUG CGSTMFByteStream::CompleteReadData() 0x%X m_pCallback %p m_pAsyncResult %p\n", hr, m_pCallback, m_pAsyncResult);
+    g_print("AMDEBUG CMFGSTByteStream::CompleteReadData() 0x%X m_pCallback %p m_pAsyncResult %p\n", hr, m_pCallback, m_pAsyncResult);
     m_readResult = hr;
     if (m_pCallback && m_pAsyncResult)
         return m_pCallback->Invoke(m_pAsyncResult);
@@ -136,24 +136,24 @@ HRESULT CGSTMFByteStream::CompleteReadData(HRESULT hr)
     return S_OK;
 }
 
-void CGSTMFByteStream::SignalEOS()
+void CMFGSTByteStream::SignalEOS()
 {
     m_bIsEOSEventReceived = TRUE;
 }
 
-void CGSTMFByteStream::ClearEOS()
+void CMFGSTByteStream::ClearEOS()
 {
     m_bIsEOS = FALSE;
     m_bIsEOSEventReceived = FALSE;
 }
 
-BOOL CGSTMFByteStream::IsReload()
+BOOL CMFGSTByteStream::IsReload()
 {
     return m_bIsReload;
 }
 
 // IMFByteStream
-HRESULT CGSTMFByteStream::BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback, IUnknown *punkState)
+HRESULT CMFGSTByteStream::BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback, IUnknown *punkState)
 {
     HRESULT hr = S_OK;
 
@@ -166,7 +166,7 @@ HRESULT CGSTMFByteStream::BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallb
     if (m_readResult != S_OK)
         return m_readResult; // Do not start new read if old one failed.
 
-    TRACE("JFXMEDIA CGSTMFByteStream::BeginRead() cb: %lu m_qwSegmentLength: %llu m_qwSegmentPosition: %llu m_qwPosition: %llu m_qwLength: %llu\n", cb, m_qwSegmentLength, m_qwSegmentPosition, m_qwPosition, m_qwLength);
+    TRACE("JFXMEDIA CMFGSTByteStream::BeginRead() cb: %lu m_qwSegmentLength: %llu m_qwSegmentPosition: %llu m_qwPosition: %llu m_qwLength: %llu\n", cb, m_qwSegmentLength, m_qwSegmentPosition, m_qwPosition, m_qwLength);
 
     // Save read request
     m_pBytes = pb;
@@ -182,18 +182,18 @@ HRESULT CGSTMFByteStream::BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallb
     return ReadData();
 }
 
-HRESULT CGSTMFByteStream::BeginWrite(const BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback, IUnknown *punkState)
+HRESULT CMFGSTByteStream::BeginWrite(const BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback, IUnknown *punkState)
 {
     return E_NOTIMPL;
 }
 
-HRESULT CGSTMFByteStream::Close()
+HRESULT CMFGSTByteStream::Close()
 {
     // Nothing to close
     return S_OK;
 }
 
-HRESULT CGSTMFByteStream::EndRead(IMFAsyncResult *pResult, ULONG *pcbRead)
+HRESULT CMFGSTByteStream::EndRead(IMFAsyncResult *pResult, ULONG *pcbRead)
 {
     Lock();
     m_bWaitForEvent = FALSE;
@@ -207,22 +207,22 @@ HRESULT CGSTMFByteStream::EndRead(IMFAsyncResult *pResult, ULONG *pcbRead)
     m_pCallback = NULL;
     m_pAsyncResult = NULL;
 
-    TRACE("JFXMEDIA CGSTMFByteStream::EndRead() m_cbBytesRead: %lu\n", m_cbBytesRead);
+    TRACE("JFXMEDIA CMFGSTByteStream::EndRead() m_cbBytesRead: %lu\n", m_cbBytesRead);
 
     return S_OK;
 }
 
-HRESULT CGSTMFByteStream::EndWrite(IMFAsyncResult *pResult, ULONG *pcbWritten)
+HRESULT CMFGSTByteStream::EndWrite(IMFAsyncResult *pResult, ULONG *pcbWritten)
 {
     return E_NOTIMPL;
 }
 
-HRESULT CGSTMFByteStream::Flush()
+HRESULT CMFGSTByteStream::Flush()
 {
     return E_NOTIMPL;
 }
 
-HRESULT CGSTMFByteStream::GetCapabilities(DWORD *pdwCapabilities)
+HRESULT CMFGSTByteStream::GetCapabilities(DWORD *pdwCapabilities)
 {
     (*pdwCapabilities) |= MFBYTESTREAM_IS_READABLE;
     (*pdwCapabilities) |= MFBYTESTREAM_IS_SEEKABLE;
@@ -230,7 +230,7 @@ HRESULT CGSTMFByteStream::GetCapabilities(DWORD *pdwCapabilities)
     return S_OK;
 }
 
-HRESULT CGSTMFByteStream::GetCurrentPosition(QWORD *pqwPosition)
+HRESULT CMFGSTByteStream::GetCurrentPosition(QWORD *pqwPosition)
 {
 //    if (m_qwLength != -1)
         (*pqwPosition) = m_qwPosition;
@@ -238,11 +238,11 @@ HRESULT CGSTMFByteStream::GetCurrentPosition(QWORD *pqwPosition)
     //     (*pqwPosition) = m_qwSegmentPosition;
     // else
     //     (*pqwPosition) = -1;
-    g_print("AMDEBUG CGSTMFByteStream::GetCurrentPosition() %llu\n", (*pqwPosition));
+    g_print("AMDEBUG CMFGSTByteStream::GetCurrentPosition() %llu\n", (*pqwPosition));
     return S_OK;
 }
 
-HRESULT CGSTMFByteStream::GetLength(QWORD *pqwLength)
+HRESULT CMFGSTByteStream::GetLength(QWORD *pqwLength)
 {
     if (m_bfMP4 && !m_bIsEOS)
     {
@@ -259,11 +259,11 @@ HRESULT CGSTMFByteStream::GetLength(QWORD *pqwLength)
     // //     (*pqwLength) = m_qwSegmentLength;
     // else
     //     (*pqwLength) = -1;
-    g_print("AMDEBUG CGSTMFByteStream::GetLength() %llu\n", (*pqwLength));
+    g_print("AMDEBUG CMFGSTByteStream::GetLength() %llu\n", (*pqwLength));
     return S_OK;
 }
 
-HRESULT CGSTMFByteStream::IsEndOfStream(BOOL *pfEndOfStream)
+HRESULT CMFGSTByteStream::IsEndOfStream(BOOL *pfEndOfStream)
 {
     if (m_bIsEOS)
         (*pfEndOfStream) = TRUE;
@@ -272,17 +272,17 @@ HRESULT CGSTMFByteStream::IsEndOfStream(BOOL *pfEndOfStream)
     else
         (*pfEndOfStream) = FALSE;
 
-    g_print("AMDEBUG CGSTMFByteStream::IsEndOfStream() %d\n", (*pfEndOfStream));
+    g_print("AMDEBUG CMFGSTByteStream::IsEndOfStream() %d\n", (*pfEndOfStream));
 
     return S_OK;
 }
 
-HRESULT CGSTMFByteStream::Read(BYTE *pb, ULONG cb, ULONG *pcbRead)
+HRESULT CMFGSTByteStream::Read(BYTE *pb, ULONG cb, ULONG *pcbRead)
 {
     return E_NOTIMPL;
 }
 
-HRESULT CGSTMFByteStream::Seek(MFBYTESTREAM_SEEK_ORIGIN SeekOrigin, LONGLONG llSeekOffset, DWORD dwSeekFlags, QWORD *pqwCurrentPosition)
+HRESULT CMFGSTByteStream::Seek(MFBYTESTREAM_SEEK_ORIGIN SeekOrigin, LONGLONG llSeekOffset, DWORD dwSeekFlags, QWORD *pqwCurrentPosition)
 {
     HRESULT hr = S_OK;
 
@@ -311,24 +311,24 @@ HRESULT CGSTMFByteStream::Seek(MFBYTESTREAM_SEEK_ORIGIN SeekOrigin, LONGLONG llS
     return S_OK;
 }
 
-HRESULT CGSTMFByteStream::SetCurrentPosition(QWORD qwPosition)
+HRESULT CMFGSTByteStream::SetCurrentPosition(QWORD qwPosition)
 {
-    g_print("AMDEBUG CGSTMFByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu\n", qwPosition, m_qwPosition);
+    g_print("AMDEBUG CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu\n", qwPosition, m_qwPosition);
     if (qwPosition > m_qwLength)
     {
-        g_print("AMDEBUG CGSTMFByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu E_INVALIDARG\n", qwPosition, m_qwPosition);
+        g_print("AMDEBUG CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu E_INVALIDARG\n", qwPosition, m_qwPosition);
         return E_INVALIDARG;
     }
 
     // if (m_bfMP4 && m_bIsEOS && qwPosition > m_qwPosition)
     // {
-    //     g_print("AMDEBUG CGSTMFByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu E_INVALIDARG\n", qwPosition, m_qwPosition);
+    //     g_print("AMDEBUG CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu E_INVALIDARG\n", qwPosition, m_qwPosition);
     //     return E_INVALIDARG;
     // }
 
     if (m_qwPosition == qwPosition)
     {
-        g_print("AMDEBUG CGSTMFByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu S_OK\n", qwPosition, m_qwPosition);
+        g_print("AMDEBUG CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu S_OK\n", qwPosition, m_qwPosition);
         return S_OK;
     }
 
@@ -348,23 +348,23 @@ HRESULT CGSTMFByteStream::SetCurrentPosition(QWORD qwPosition)
     //     m_qwPosition = qwPosition;
     // }
 
-    g_print("AMDEBUG CGSTMFByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu S_OK\n", qwPosition, m_qwPosition);
+    g_print("AMDEBUG CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu S_OK\n", qwPosition, m_qwPosition);
 
     return S_OK;
 }
 
-HRESULT CGSTMFByteStream::SetLength(QWORD qwLength)
+HRESULT CMFGSTByteStream::SetLength(QWORD qwLength)
 {
     return E_NOTIMPL;
 }
 
-HRESULT CGSTMFByteStream::Write(const BYTE *pb, ULONG cb, ULONG *pcbWritten)
+HRESULT CMFGSTByteStream::Write(const BYTE *pb, ULONG cb, ULONG *pcbWritten)
 {
     return E_NOTIMPL;
 }
 
 // IMFMediaEventGenerator
-HRESULT CGSTMFByteStream::BeginGetEvent(IMFAsyncCallback *pCallback, IUnknown *pState)
+HRESULT CMFGSTByteStream::BeginGetEvent(IMFAsyncCallback *pCallback, IUnknown *pState)
 {
     EnterCriticalSection(&m_csEventLock);
 
@@ -378,7 +378,7 @@ HRESULT CGSTMFByteStream::BeginGetEvent(IMFAsyncCallback *pCallback, IUnknown *p
     return hr;
 }
 
-HRESULT CGSTMFByteStream::EndGetEvent(IMFAsyncResult *pResult, IMFMediaEvent **ppEvent)
+HRESULT CMFGSTByteStream::EndGetEvent(IMFAsyncResult *pResult, IMFMediaEvent **ppEvent)
 {
     EnterCriticalSection(&m_csEventLock);
 
@@ -392,7 +392,7 @@ HRESULT CGSTMFByteStream::EndGetEvent(IMFAsyncResult *pResult, IMFMediaEvent **p
     return hr;
 }
 
-HRESULT CGSTMFByteStream::GetEvent(DWORD dwFlags, IMFMediaEvent **ppEvent)
+HRESULT CMFGSTByteStream::GetEvent(DWORD dwFlags, IMFMediaEvent **ppEvent)
 {
     // m_pEventQueue::GetEvent() can block, so do not hold m_csEventLock.
     IMFMediaEventQueue *pQueue = NULL;
@@ -413,7 +413,7 @@ HRESULT CGSTMFByteStream::GetEvent(DWORD dwFlags, IMFMediaEvent **ppEvent)
     return hr;
 }
 
-HRESULT CGSTMFByteStream::QueueEvent(MediaEventType met, REFGUID extendedType, HRESULT hrStatus, const PROPVARIANT *pvValue)
+HRESULT CMFGSTByteStream::QueueEvent(MediaEventType met, REFGUID extendedType, HRESULT hrStatus, const PROPVARIANT *pvValue)
 {
     EnterCriticalSection(&m_csEventLock);
 
@@ -426,7 +426,7 @@ HRESULT CGSTMFByteStream::QueueEvent(MediaEventType met, REFGUID extendedType, H
 }
 
 // IUnknown
-HRESULT CGSTMFByteStream::QueryInterface(REFIID riid, void **ppvObject)
+HRESULT CMFGSTByteStream::QueryInterface(REFIID riid, void **ppvObject)
 {
     if (!ppvObject)
     {
@@ -453,12 +453,12 @@ HRESULT CGSTMFByteStream::QueryInterface(REFIID riid, void **ppvObject)
     return S_OK;
 }
 
-ULONG CGSTMFByteStream::AddRef()
+ULONG CMFGSTByteStream::AddRef()
 {
     return InterlockedIncrement(&m_ulRefCount);
 }
 
-ULONG CGSTMFByteStream::Release()
+ULONG CMFGSTByteStream::Release()
 {
     ULONG uCount = InterlockedDecrement(&m_ulRefCount);
     if (uCount == 0)
@@ -470,12 +470,12 @@ ULONG CGSTMFByteStream::Release()
 }
 
 // IMFMediaEventGenerator
-HRESULT CGSTMFByteStream::CheckEventQueueShutdown() const
+HRESULT CMFGSTByteStream::CheckEventQueueShutdown() const
 {
     return (m_bEventQueueShutdown ? MF_E_SHUTDOWN : S_OK);
 }
 
-HRESULT CGSTMFByteStream::ShutdownEventQueue()
+HRESULT CMFGSTByteStream::ShutdownEventQueue()
 {
     EnterCriticalSection(&m_csEventLock);
 
@@ -494,7 +494,7 @@ HRESULT CGSTMFByteStream::ShutdownEventQueue()
     return hr;
 }
 
-HRESULT CGSTMFByteStream::ReadData()
+HRESULT CMFGSTByteStream::ReadData()
 {
     HRESULT hr = S_OK;
     GstFlowReturn ret = GST_FLOW_ERROR;
@@ -565,7 +565,7 @@ HRESULT CGSTMFByteStream::ReadData()
     return hr;
 }
 
-HRESULT CGSTMFByteStream::PushDataBuffer(GstBuffer* pBuffer)
+HRESULT CMFGSTByteStream::PushDataBuffer(GstBuffer* pBuffer)
 {
     HRESULT hr = S_OK;
 
@@ -630,7 +630,7 @@ HRESULT CGSTMFByteStream::PushDataBuffer(GstBuffer* pBuffer)
     return hr;
 }
 
-HRESULT CGSTMFByteStream::PrepareWaitForData()
+HRESULT CMFGSTByteStream::PrepareWaitForData()
 {
     Lock();
     m_bWaitForEvent = TRUE;
@@ -646,12 +646,12 @@ HRESULT CGSTMFByteStream::PrepareWaitForData()
     return S_OK;
 }
 
-void CGSTMFByteStream::Lock()
+void CMFGSTByteStream::Lock()
 {
     EnterCriticalSection(&m_csLock);
 }
 
-void CGSTMFByteStream::Unlock()
+void CMFGSTByteStream::Unlock()
 {
     LeaveCriticalSection(&m_csLock);
 }

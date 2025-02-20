@@ -23,8 +23,8 @@
  * questions.
  */
 
-#ifndef __GST_MF_BYTESTREAM_H__
-#define __GST_MF_BYTESTREAM_H__
+#ifndef __MF_GST_BYTESTREAM_H__
+#define __MF_GST_BYTESTREAM_H__
 
 #include <gst/gst.h>
 
@@ -37,11 +37,11 @@
 static const GUID GUID_NULL =
 { 0x00000000, 0x0000, 0x0000, { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } };
 
-class CGSTMFByteStream : public IMFByteStream, IMFMediaEventGenerator
+class CMFGSTByteStream : public IMFByteStream, IMFMediaEventGenerator
 {
 public:
-    CGSTMFByteStream(HRESULT &hr, QWORD qwLength, GstPad *pSinkPad);
-    ~CGSTMFByteStream();
+    CMFGSTByteStream(HRESULT &hr, QWORD qwLength, GstPad *pSinkPad);
+    ~CMFGSTByteStream();
 
     void Shutdown();
 
@@ -129,4 +129,4 @@ private:
     BOOL m_bEventQueueShutdown;
 };
 
-#endif // __GST_MF_BYTESTREAM_H__
+#endif // __MF_GST_BYTESTREAM_H__

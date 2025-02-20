@@ -34,7 +34,7 @@
 //#include <mferror.h>
 //#include <mftransform.h>
 
-#include <gstmfbytestream.h>
+#include <mfgstbytestream.h>
 
 #include "fxplugins_common.h"
 
@@ -90,7 +90,7 @@ struct _GstMFDemux
     gdouble rate;
     gint64 seek_position;
 
-    CGSTMFByteStream *pGSTMFByteStream;
+    CMFGSTByteStream *pGSTMFByteStream;
     IMFByteStream *pIMFByteStream;
     IMFSourceReader *pSourceReader;
 

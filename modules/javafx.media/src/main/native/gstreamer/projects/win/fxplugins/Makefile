@@ -62,7 +62,7 @@ CPP_SOURCES = dshowwrapper/Allocator.cpp \
               dshowwrapper/Src.cpp \
               mfwrapper/mfwrapper.cpp \
               mfwrapper/mfdemux.cpp \
-              mfwrapper/gstmfbytestream.cpp \
+              mfwrapper/mfgstbytestream.cpp \
               mfwrapper/mfgstbuffer.cpp
 
 COMPILER_FLAGS = -nologo -W3 -WX- -EHsc -GS -fp:precise \
