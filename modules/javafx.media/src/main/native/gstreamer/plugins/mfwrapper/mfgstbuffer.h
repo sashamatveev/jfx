@@ -43,6 +43,7 @@ class CMFGSTBuffer : public IMFMediaBuffer
 {
 public:
     CMFGSTBuffer(DWORD cbMaxLength);
+    CMFGSTBuffer(HRESULT &hr, GstBuffer *pGstBuffer);
     ~CMFGSTBuffer();
 
     // IMFMediaBuffer
@@ -64,6 +65,7 @@ public:
             long lSize, sCallbackData *pCallbackData));
 
 private:
+    void Init();
     HRESULT AllocateOrGetBuffer(BYTE **ppbBuffer);
 
     ULONG m_ulRefCount;

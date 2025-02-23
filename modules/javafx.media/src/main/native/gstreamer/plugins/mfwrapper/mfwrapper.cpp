@@ -39,7 +39,7 @@
 
 #include "fxplugins_common.h"
 
-#define PTS_DEBUG 1
+#define PTS_DEBUG 0
 #define MEDIA_FORMAT_DEBUG 0
 
 // 3 buffers is enough for rendering. During testing 2 buffers is actually
@@ -225,9 +225,6 @@ static void gst_mfwrapper_init(GstMFWrapper *decoder)
 
     decoder->pool = NULL;
 
-    decoder->header = NULL;
-    decoder->header_size = 0;
-
     decoder->width = 1920;
     decoder->height = 1080;
     decoder->framerate_num = 2997;
@@ -321,7 +318,8 @@ static gboolean mfwrapper_is_decoder_by_codec_id_supported(GstMFWrapper *decoder
         return FALSE;
 }
 
-static HRESULT mfwrapper_create_sample(IMFSample **ppSample, DWORD dwSize, CMFGSTBuffer **ppMFGSTBuffer)
+static HRESULT mfwrapper_create_sample(IMFSample **ppSample, DWORD dwSize,
+                                       CMFGSTBuffer **ppMFGSTBuffer)
 {
     if (ppSample == NULL || dwSize == 0 || ppMFGSTBuffer == NULL)
         return E_INVALIDARG;
@@ -343,6 +341,55 @@ static HRESULT mfwrapper_create_sample(IMFSample **ppSample, DWORD dwSize, CMFGS
 
         (*ppSample)->AddBuffer(pBuffer);
         SafeRelease(&pBuffer);
+    }
+
+    return S_OK;
+}
+
+static HRESULT mfwrapper_create_sample_from_gst_buffer(IMFSample **ppSample,
+                                                       GstBuffer *buf,
+                                                       gboolean &bDiscont)
+{
+    if (ppSample == NULL || buf == NULL)
+        return E_INVALIDARG;
+
+    HRESULT hr = MFCreateSample(ppSample);
+    if (SUCCEEDED(hr))
+    {
+        CMFGSTBuffer *pMFGSTBuffer = new (nothrow) CMFGSTBuffer(hr, buf);
+        if (pMFGSTBuffer == NULL)
+            return E_OUTOFMEMORY;
+
+        if (FAILED(hr))
+        {
+            delete pMFGSTBuffer;
+            return hr;
+        }
+
+        IMFMediaBuffer *pBuffer = NULL;
+        hr = pMFGSTBuffer->QueryInterface(IID_IMFMediaBuffer, (void **)&pBuffer);
+        if (FAILED(hr) || pBuffer == NULL)
+        {
+            delete pMFGSTBuffer;
+            return E_NOINTERFACE;
+        }
+
+        hr = (*ppSample)->AddBuffer(pBuffer);
+        SafeRelease(&pBuffer);
+
+        // Copy metadata from GStreamer to Media Foundation sample
+        if (SUCCEEDED(hr) && GST_BUFFER_PTS_IS_VALID(buf))
+            hr = (*ppSample)->SetSampleTime(GST_BUFFER_PTS(buf) / 100);
+
+        if (SUCCEEDED(hr) && GST_BUFFER_DURATION_IS_VALID(buf))
+            hr = (*ppSample)->SetSampleDuration(GST_BUFFER_DURATION(buf) / 100);
+
+        if (SUCCEEDED(hr) &&
+            (GST_BUFFER_FLAG_IS_SET(buf, GST_BUFFER_FLAG_DISCONT) || bDiscont))
+        {
+            hr = (*ppSample)->SetUINT32(MFSampleExtension_Discontinuity, TRUE);
+            bDiscont = FALSE;
+        }
     }
 
     return S_OK;
@@ -473,134 +520,35 @@ static void mfwrapper_print_output_media_formats(IMFTransform *pMFTrasnform, con
 }
 #endif // MEDIA_FORMAT_DEBUG
 
-//static void mfwrapper_nalu_to_start_code(BYTE *pbBuffer, gsize size)
-//{
-//    gint leftSize = size;
-//
-//    if (pbBuffer == NULL || size < 4)
-//        return;
-//
-//    do
-//    {
-//        guint naluLen = ((guint)*(guint8*)pbBuffer) << 24;
-//        naluLen |= ((guint)*(guint8*)(pbBuffer + 1)) << 16;
-//        naluLen |= ((guint)*(guint8*)(pbBuffer + 2)) << 8;
-//        naluLen |= ((guint)*(guint8*)(pbBuffer + 3));
-//
-//        if (naluLen <= 1) // Start code or something wrong
-//            return;
-//
-//        pbBuffer[0] = 0x00;
-//        pbBuffer[1] = 0x00;
-//        pbBuffer[2] = 0x00;
-//        pbBuffer[3] = 0x01;
-//
-//        leftSize -= (naluLen + 4);
-//        pbBuffer += (naluLen + 4);
-//
-//    } while (leftSize > 0);
-//}
-
 static gboolean mfwrapper_process_input(GstMFWrapper *decoder, GstBuffer *buf)
 {
     IMFSample *pSample = NULL;
-    IMFMediaBuffer *pBuffer = NULL;
-    DWORD dwBufferSize = 0;
-    BYTE *pbBuffer = NULL;
-    GstMapInfo info;
-    gboolean unmap_buf = FALSE;
-    gboolean unlock_buf = FALSE;
 
     if (!decoder->pDecoder)
+    {
+        // INLINE - gst_buffer_unref()
+        gst_buffer_unref(buf);
         return FALSE;
-
-    HRESULT hr = MFCreateSample(&pSample);
-
-    if (SUCCEEDED(hr) && decoder->force_discontinuity)
-    {
-        hr = pSample->SetUINT32(MFSampleExtension_Discontinuity, TRUE);
-        decoder->force_discontinuity = FALSE;
     }
 
-    if (SUCCEEDED(hr) && GST_BUFFER_PTS_IS_VALID(buf))
-        hr = pSample->SetSampleTime(GST_BUFFER_PTS(buf) / 100);
-
-    if (SUCCEEDED(hr) && GST_BUFFER_DURATION_IS_VALID(buf))
-        hr = pSample->SetSampleDuration(GST_BUFFER_DURATION(buf) / 100);
-
-    if (SUCCEEDED(hr) && gst_buffer_map(buf, &info, GST_MAP_READ))
-        unmap_buf = TRUE;
-    else
-        hr = E_FAIL;
-
-    if (SUCCEEDED(hr) && decoder->header != NULL && decoder->header_size > 0)
-        dwBufferSize = (DWORD)decoder->header_size + (DWORD)info.size;
-    else if (SUCCEEDED(hr))
-        dwBufferSize = (DWORD)info.size;
-
-    if (SUCCEEDED(hr))
-        hr = MFCreateMemoryBuffer(dwBufferSize, &pBuffer);
-
-    if (SUCCEEDED(hr))
-        hr = pBuffer->SetCurrentLength(dwBufferSize);
-
-    if (SUCCEEDED(hr))
-        hr = pBuffer->Lock(&pbBuffer, NULL, NULL);
-
-    if (SUCCEEDED(hr))
-        unlock_buf = TRUE;
-
-    if (SUCCEEDED(hr) && decoder->header != NULL && decoder->header_size > 0)
-    {
-        if (dwBufferSize >= decoder->header_size)
-        {
-            memcpy_s(pbBuffer, dwBufferSize, decoder->header, decoder->header_size);
-            pbBuffer += decoder->header_size;
-            dwBufferSize -= decoder->header_size;
-
-            if (dwBufferSize >= info.size)
-            {
-                memcpy_s(pbBuffer, dwBufferSize, info.data, info.size);
-                //mfwrapper_nalu_to_start_code(pbBuffer, info.size);
-            }
-            else
-            {
-                hr = E_FAIL;
-            }
-        }
-        else
-        {
-            hr = E_FAIL;
-        }
-    }
-    else if (SUCCEEDED(hr))
-    {
-        memcpy_s(pbBuffer, dwBufferSize, info.data, info.size);
-        //mfwrapper_nalu_to_start_code(pbBuffer, info.size);
-    }
-
-    if (decoder->header != NULL)
-    {
-        delete[] decoder->header;
-        decoder->header = NULL;
-        decoder->header_size = 0;
-    }
-
-    if (unlock_buf)
-        hr = pBuffer->Unlock();
-
-    if (unmap_buf)
-        gst_buffer_unmap(buf, &info);
-
-    if (SUCCEEDED(hr))
-        hr = pSample->AddBuffer(pBuffer);
+    HRESULT hr = mfwrapper_create_sample_from_gst_buffer(&pSample, buf,
+            decoder->force_discontinuity);
 
     if (SUCCEEDED(hr))
         hr = decoder->pDecoder->ProcessInput(0, pSample, 0);
 
-    gst_buffer_unref(buf);
+    // If ProcessInput() fails it is critical and we cannot decode.
+    if (FAILED(hr))
+    {
+        decoder->is_decoder_error = TRUE;
+        gst_element_message_full(GST_ELEMENT(decoder), GST_MESSAGE_ERROR,
+                GST_STREAM_ERROR, GST_STREAM_ERROR_DECODE,
+                g_strdup_printf("Failed to decode stream (0x%X)", hr), NULL,
+                ("mfwrapper.c"), ("mfwrapper_process_input"), 0);
+    }
 
-    SafeRelease(&pBuffer);
+    // INLINE - gst_buffer_unref()
+    gst_buffer_unref(buf);
     SafeRelease(&pSample);
 
     if (SUCCEEDED(hr))
@@ -1410,7 +1358,7 @@ static GstFlowReturn mfwrapper_chain(GstPad *pad, GstObject *parent, GstBuffer *
 {
     GstMFWrapper *decoder = GST_MFWRAPPER(parent);
 
-    if (decoder->is_flushing || decoder->is_eos_received)
+    if (decoder->is_flushing || decoder->is_eos_received || decoder->is_decoder_error)
     {
         // INLINE - gst_buffer_unref()
         gst_buffer_unref(buf);
@@ -1798,42 +1746,6 @@ static gboolean mfwrapper_init_mf(GstMFWrapper *decoder, GstCaps *caps)
 
     if (s == NULL)
         return FALSE;
-
-    // Get HEVC Config
-    GstMapInfo info;
-
-    if (SUCCEEDED(hr))
-        codec_data_value = gst_structure_get_value(s, "codec_data");
-
-    if (codec_data_value)
-        codec_data = gst_value_get_buffer(codec_data_value);
-
-    if (codec_data != NULL)
-    {
-        if (gst_buffer_map(codec_data, &info, GST_MAP_READ) && info.size > 0)
-        {
-            // Free old one if exist
-            if (decoder->header)
-                delete[] decoder->header;
-
-            decoder->header = new BYTE[info.size * 2]; // Should be enough, since we will only add several 4 bytes start codes to 3 nal units
-            if (decoder->header == NULL)
-            {
-                gst_buffer_unmap(codec_data, &info);
-                return FALSE;
-            }
-
-            decoder->header_size = mfwrapper_get_hevc_config(info.data, info.size, decoder->header, info.size * 2);
-            gst_buffer_unmap(codec_data, &info);
-
-            if (decoder->header_size <= 0)
-            {
-                delete[] decoder->header;
-                decoder->header = NULL;
-                return FALSE;
-            }
-        }
-    }
 
     if (!decoder->is_decoder_initialized)
     {

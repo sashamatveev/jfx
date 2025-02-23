@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2024, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -513,7 +513,6 @@ uint32_t CGstPipelineFactory::CreateMP4Pipeline(GstElement* pVideoSink,
     // We need to load dshowwrapper (H.264) or mfwrapper (H.265), but we do not know which one based on .mp4
     // extension, so intead we will load video decoder dynamically when qtdemux will signal video pad added.
     pOptions->SetStreamParser("mfdemux")->SetAudioDecoder("dshowwrapper");
-    //pOptions->SetStreamParser("qtdemux")->SetAudioDecoder("dshowwrapper");
     return CreateAVPipeline(true, pVideoSink, pOptions, pElements, ppPipeline);
 #elif TARGET_OS_MAC
     return ERROR_PLATFORM_UNSUPPORTED;
@@ -571,14 +570,12 @@ uint32_t CGstPipelineFactory::CreateHLSPipeline(GstElement* pVideoSink, CPipelin
         if (pOptions->GetStreamMimeType() == HLS_VALUE_MIMETYPE_MP2T)
             pOptions->SetStreamParser("dshowwrapper")->SetVideoDecoder("dshowwrapper");
         else if (pOptions->GetStreamMimeType() == HLS_VALUE_MIMETYPE_FMP4)
-            //pOptions->SetStreamParser("qtdemux"); // Video decoder loaded dynamically
             pOptions->SetStreamParser("mfdemux"); // Video decoder loaded dynamically
         else
             return ERROR_PLATFORM_UNSUPPORTED;
 
         // Audio stream can be FMP4 or AAC
         if (pOptions->GetAudioStreamMimeType() == HLS_VALUE_MIMETYPE_FMP4)
-            //pOptions->SetAudioStreamParser("qtdemux")->SetAudioDecoder("dshowwrapper");
             pOptions->SetAudioStreamParser("mfdemux")->SetAudioDecoder("dshowwrapper");
         else if (pOptions->GetAudioStreamMimeType() == HLS_VALUE_MIMETYPE_AAC)
             pOptions->SetAudioDecoder("dshowwrapper");
@@ -607,7 +604,6 @@ uint32_t CGstPipelineFactory::CreateHLSPipeline(GstElement* pVideoSink, CPipelin
         else if (pOptions->GetStreamMimeType() == HLS_VALUE_MIMETYPE_FMP4)
         {
             // Video decoder is loaded dynamically
-            //pOptions->SetStreamParser("qtdemux")->SetAudioDecoder("dshowwrapper");
             pOptions->SetStreamParser("mfdemux")->SetAudioDecoder("dshowwrapper");
             return CreateAVPipeline(true, pVideoSink, pOptions, pElements, ppPipeline);
         }

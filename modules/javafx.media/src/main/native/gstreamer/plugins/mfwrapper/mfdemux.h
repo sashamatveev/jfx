@@ -31,8 +31,6 @@
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
-//#include <mferror.h>
-//#include <mftransform.h>
 
 #include <mfgstbytestream.h>
 
@@ -49,7 +47,6 @@ typedef struct {
     JFX_CODEC_ID codecID;
     UINT32 uiWidth;
     UINT32 uiHeight;
-    GstBuffer *codec_data;
 } VideoFormat;
 
 G_BEGIN_DECLS

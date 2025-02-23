@@ -25,7 +25,12 @@
 
 #include "mfgstbytestream.h"
 
-#define ENABLE_TRACE 1
+#define ENABLE_TRACE 0
+#if ENABLE_TRACE
+    #define TRACE g_print
+#else // ENABLE_TRACE
+    #define TRACE
+#endif // ENABLE_TRACE
 
 template <class T> void SafeRelease(T **ppT)
 {
@@ -35,12 +40,6 @@ template <class T> void SafeRelease(T **ppT)
         *ppT = NULL;
     }
 }
-
-#if ENABLE_TRACE
-    #define TRACE g_print
-#else // ENABLE_TRACE
-    #define TRACE
-#endif // ENABLE_TRACE
 
 CMFGSTByteStream::CMFGSTByteStream(HRESULT &hr, QWORD qwLength, GstPad *pSinkPad)
 {
@@ -54,7 +53,6 @@ CMFGSTByteStream::CMFGSTByteStream(HRESULT &hr, QWORD qwLength, GstPad *pSinkPad
 
     m_ulRefCount = 0;
     m_qwPosition = 0;
-    //m_qwLength = m_bfMP4 ? 0 : qwLength;
     m_qwLength = qwLength;
     m_qwSegmentPosition = 0;
     m_qwSegmentLength = -1;
@@ -111,8 +109,6 @@ void CMFGSTByteStream::SetSegmentLength(QWORD qwSegmentLength, bool bForce)
     {
         m_qwSegmentLength = qwSegmentLength;
         m_qwSegmentPosition = 0;
-        // if (qwSegmentLength != -1)
-        //     m_qwLength += qwSegmentLength;
     }
     Unlock();
 }
@@ -128,7 +124,7 @@ bool CMFGSTByteStream::IsSeekSupported()
 
 HRESULT CMFGSTByteStream::CompleteReadData(HRESULT hr)
 {
-    g_print("AMDEBUG CMFGSTByteStream::CompleteReadData() 0x%X m_pCallback %p m_pAsyncResult %p\n", hr, m_pCallback, m_pAsyncResult);
+    TRACE("JFXMEDIA CMFGSTByteStream::CompleteReadData() 0x%X m_pCallback %p m_pAsyncResult %p\n", hr, m_pCallback, m_pAsyncResult);
     m_readResult = hr;
     if (m_pCallback && m_pAsyncResult)
         return m_pCallback->Invoke(m_pAsyncResult);
@@ -232,39 +228,35 @@ HRESULT CMFGSTByteStream::GetCapabilities(DWORD *pdwCapabilities)
 
 HRESULT CMFGSTByteStream::GetCurrentPosition(QWORD *pqwPosition)
 {
-//    if (m_qwLength != -1)
-        (*pqwPosition) = m_qwPosition;
-    // else if (m_bIsEOS)
-    //     (*pqwPosition) = m_qwSegmentPosition;
-    // else
-    //     (*pqwPosition) = -1;
-    g_print("AMDEBUG CMFGSTByteStream::GetCurrentPosition() %llu\n", (*pqwPosition));
+    if (pqwPosition == NULL)
+        return E_POINTER;
+
+    (*pqwPosition) = m_qwPosition;
+
+    TRACE("JFXMEDIA CMFGSTByteStream::GetCurrentPosition() %llu\n", (*pqwPosition));
     return S_OK;
 }
 
 HRESULT CMFGSTByteStream::GetLength(QWORD *pqwLength)
 {
+    if (pqwLength == NULL)
+        return E_FAIL;
+
     if (m_bfMP4 && !m_bIsEOS)
-    {
-//        if (m_qwLength == 0)
-            (*pqwLength) = -1;
-        // else
-        //     (*pqwLength) = m_qwLength + 1 + 262144;
-    }
+        (*pqwLength) = -1;
     else
         (*pqwLength) = m_qwLength;
-    // if (!m_bfMP4)
-    //     (*pqwLength) = m_qwLength;
-    // // else if (m_bIsEOS)
-    // //     (*pqwLength) = m_qwSegmentLength;
-    // else
-    //     (*pqwLength) = -1;
-    g_print("AMDEBUG CMFGSTByteStream::GetLength() %llu\n", (*pqwLength));
+
+    TRACE("JFXMEDIA CMFGSTByteStream::GetLength() %llu\n", (*pqwLength));
+
     return S_OK;
 }
 
 HRESULT CMFGSTByteStream::IsEndOfStream(BOOL *pfEndOfStream)
 {
+    if (pfEndOfStream == NULL)
+        return E_POINTER;
+
     if (m_bIsEOS)
         (*pfEndOfStream) = TRUE;
     else if (m_qwPosition >= m_qwLength)
@@ -272,7 +264,7 @@ HRESULT CMFGSTByteStream::IsEndOfStream(BOOL *pfEndOfStream)
     else
         (*pfEndOfStream) = FALSE;
 
-    g_print("AMDEBUG CMFGSTByteStream::IsEndOfStream() %d\n", (*pfEndOfStream));
+    TRACE("JFXMEDIA CMFGSTByteStream::IsEndOfStream() %d\n", (*pfEndOfStream));
 
     return S_OK;
 }
@@ -313,22 +305,16 @@ HRESULT CMFGSTByteStream::Seek(MFBYTESTREAM_SEEK_ORIGIN SeekOrigin, LONGLONG llS
 
 HRESULT CMFGSTByteStream::SetCurrentPosition(QWORD qwPosition)
 {
-    g_print("AMDEBUG CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu\n", qwPosition, m_qwPosition);
+    TRACE("JFXMEDIA CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu\n", qwPosition, m_qwPosition);
     if (qwPosition > m_qwLength)
     {
-        g_print("AMDEBUG CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu E_INVALIDARG\n", qwPosition, m_qwPosition);
+        TRACE("JFXMEDIA CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu E_INVALIDARG\n", qwPosition, m_qwPosition);
         return E_INVALIDARG;
     }
 
-    // if (m_bfMP4 && m_bIsEOS && qwPosition > m_qwPosition)
-    // {
-    //     g_print("AMDEBUG CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu E_INVALIDARG\n", qwPosition, m_qwPosition);
-    //     return E_INVALIDARG;
-    // }
-
     if (m_qwPosition == qwPosition)
     {
-        g_print("AMDEBUG CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu S_OK\n", qwPosition, m_qwPosition);
+        TRACE("JFXMEDIA CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu S_OK\n", qwPosition, m_qwPosition);
         return S_OK;
     }
 
@@ -343,12 +329,8 @@ HRESULT CMFGSTByteStream::SetCurrentPosition(QWORD qwPosition)
         m_qwPosition = 0;
         m_qwSegmentPosition = 0;
     }
-    // else if (m_bfMP4 && m_bIsEOS)
-    // {
-    //     m_qwPosition = qwPosition;
-    // }
 
-    g_print("AMDEBUG CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu S_OK\n", qwPosition, m_qwPosition);
+    TRACE("JFXMEDIA CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu S_OK\n", qwPosition, m_qwPosition);
 
     return S_OK;
 }
@@ -462,10 +444,7 @@ ULONG CMFGSTByteStream::Release()
 {
     ULONG uCount = InterlockedDecrement(&m_ulRefCount);
     if (uCount == 0)
-    {
-        ShutdownEventQueue();
         delete this;
-    }
     return uCount;
 }
 

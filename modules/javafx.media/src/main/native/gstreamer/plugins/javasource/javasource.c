@@ -550,7 +550,7 @@ static void java_source_loop(void *user_data)
 next_event:
         switch (element->pending_event)
         {
-            case GST_EVENT_STREAM_START:
+        case GST_EVENT_STREAM_START:
             {
                 gchar *stream_id;
                 GstEvent *event;
@@ -560,6 +560,35 @@ next_event:
                 gst_event_set_group_id (event, gst_util_group_id_next ());
                 result = gst_pad_push_event (element->srcpad, event) ? GST_FLOW_OK : GST_FLOW_FLUSHING;
                 g_free (stream_id);
+
+                element->pending_event = GST_EVENT_CAPS;
+                break;
+            }
+
+        case GST_EVENT_CAPS:
+            {
+                // Set caps to mimetype if provided, we need to do this before pushing buffer,
+                // so downstream filters can configure itself correctly. Caps are set via event in GStreamer 1.0.
+                if (element->mimetype)
+                {
+                    GstCaps *caps = NULL;
+                    GstEvent *caps_event = NULL;
+                    // Special case for HLS AAC elementary stream.
+                    // It has "audio/aac" mimetype which is same as
+                    // "audio/mpeg" mpegversion=4. We changing it here
+                    // so downstream will undestand it.
+                    if (strstr(element->mimetype, "audio/aac") != NULL)
+                        caps = gst_caps_new_simple("audio/mpeg", "mpegversion", G_TYPE_INT, 4, NULL);
+                    else
+                        caps = gst_caps_new_simple(element->mimetype, NULL, NULL);
+
+                    caps_event = gst_event_new_caps(caps);
+                    if (caps_event)
+                        gst_pad_push_event(element->srcpad, caps_event);
+                    gst_caps_unref(caps);
+                    g_free(element->mimetype);
+                    element->mimetype = NULL;
+                }
 
                 element->pending_event = GST_EVENT_SEGMENT;
                 break;
@@ -665,29 +694,6 @@ next_event:
                             buffer = gst_buffer_make_writable (buffer);
                             GST_BUFFER_FLAG_SET (buffer, GST_BUFFER_FLAG_HEADER);
                             element->header = FALSE;
-                        }
-
-                        // Set caps to mimetype if provided, we need to do this before pushing buffer,
-                        // so downstream filters can configure itself correctly. Caps are set via event in GStreamer 1.0.
-                        if (element->mimetype)
-                        {
-                            GstCaps *caps = NULL;
-                            GstEvent *caps_event = NULL;
-                            // Special case for HLS AAC elementary stream.
-                            // It has "audio/aac" mimetype which is same as
-                            // "audio/mpeg" mpegversion=4. We changing it here
-                            // so downstream will undestand it.
-                            if (strstr(element->mimetype, "audio/aac") != NULL)
-                                caps = gst_caps_new_simple("audio/mpeg", "mpegversion", G_TYPE_INT, 4, NULL);
-                            else
-                                caps = gst_caps_new_simple(element->mimetype, NULL, NULL);
-
-                            caps_event = gst_event_new_caps(caps);
-                            if (caps_event)
-                                gst_pad_push_event(element->srcpad, caps_event);
-                            gst_caps_unref(caps);
-                            g_free(element->mimetype);
-                            element->mimetype = NULL;
                         }
 
                         result = gst_pad_push(element->srcpad, buffer);

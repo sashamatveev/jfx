@@ -92,9 +92,6 @@ struct _GstMFWrapper
 
     GstBufferPool *pool;
 
-    BYTE *header;
-    gsize header_size;
-
     guint width;
     guint height;
     guint framerate_num;
