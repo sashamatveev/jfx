@@ -39,7 +39,7 @@
 
 using namespace std;
 
-#define ENABLE_TRACE 0
+#define ENABLE_TRACE 1
 #if ENABLE_TRACE
     #define TRACE g_print
 #else // ENABLE_TRACE
@@ -489,7 +489,7 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                     PropVariantClear(&pv);
 
                     // INLINE - gst_event_unref()
-                    gst_event_unref (event);
+                    gst_event_unref(event);
                     ret = TRUE; // We handle event
                 }
                 else

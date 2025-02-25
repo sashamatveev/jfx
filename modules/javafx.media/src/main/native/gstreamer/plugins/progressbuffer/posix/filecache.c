@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -161,14 +161,15 @@ GstFlowReturn cache_read_buffer_from_position(Cache *cache, gint64 start_positio
     return result;
 }
 
-GstFlowReturn cache_read_buffer_from_position2(Cache* cache, gint64 start_position, guint size, GstBuffer** buffer)
+GstFlowReturn cache_read_buffer_from_position2(Cache* cache, gint64 start_position,
+                                               guint size, GstBuffer** buffer)
 {
     GstFlowReturn result = GST_FLOW_ERROR;
 
     if (cache == NULL)
         return GST_FLOW_ERROR;
 
-    gint64 bytes_available = cache_bytes_available(cache);
+    gint64 bytes_available = cache_bytes_available(cache, start_position);
     if (bytes_available == 0)
         return GST_FLOW_FLUSHING;
 
@@ -220,10 +221,10 @@ gboolean cache_has_enough_data2(Cache* cache, guint64 read_position, guint size)
     return FALSE;
 }
 
-gint64 cache_bytes_available(Cache* cache)
+gint64 cache_bytes_available(Cache* cache, guint64 read_position)
 {
-    if (cache_has_enough_data(cache))
-        return (cache->write_position - cache->read_position)
+    if (read_position < cache->write_position)
+        return (cache->write_position - read_position);
     else
         return 0;
 }

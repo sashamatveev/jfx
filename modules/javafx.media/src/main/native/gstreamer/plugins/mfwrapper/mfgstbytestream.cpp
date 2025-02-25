@@ -25,7 +25,7 @@
 
 #include "mfgstbytestream.h"
 
-#define ENABLE_TRACE 0
+#define ENABLE_TRACE 1
 #if ENABLE_TRACE
     #define TRACE g_print
 #else // ENABLE_TRACE
@@ -564,6 +564,8 @@ HRESULT CMFGSTByteStream::PushDataBuffer(GstBuffer* pBuffer)
     // provided by hlsprogressbuffer.
     if (GST_BUFFER_FLAG_IS_SET(pBuffer, GST_BUFFER_FLAG_HEADER))
     {
+        TRACE("JFXMEDIA CMFGSTByteStream::PushDataBuffer() GST_BUFFER_FLAG_HEADER\n");
+
         // INLINE - gst_buffer_unref()
         gst_buffer_unref(pBuffer);
         m_bIsReload = TRUE;

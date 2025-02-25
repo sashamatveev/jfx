@@ -54,8 +54,10 @@ public:
     BOOL IsReload();
 
     // IMFByteStream
-    HRESULT BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback, IUnknown *punkState);
-    HRESULT BeginWrite(const BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback, IUnknown *punkState);
+    HRESULT BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback,
+            IUnknown *punkState);
+    HRESULT BeginWrite(const BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback,
+            IUnknown *punkState);
     HRESULT Close();
     HRESULT EndRead(IMFAsyncResult *pResult, ULONG *pcbRead);
     HRESULT EndWrite(IMFAsyncResult *pResult, ULONG *pcbWritten);
@@ -65,7 +67,8 @@ public:
     HRESULT GetLength(QWORD *pqwLength);
     HRESULT IsEndOfStream(BOOL *pfEndOfStream);
     HRESULT Read(BYTE *pb, ULONG cb, ULONG *pcbRead);
-    HRESULT Seek(MFBYTESTREAM_SEEK_ORIGIN SeekOrigin, LONGLONG llSeekOffset, DWORD dwSeekFlags, QWORD *pqwCurrentPosition);
+    HRESULT Seek(MFBYTESTREAM_SEEK_ORIGIN SeekOrigin, LONGLONG llSeekOffset,
+            DWORD dwSeekFlags, QWORD *pqwCurrentPosition);
     HRESULT SetCurrentPosition(QWORD qwPosition);
     HRESULT SetLength(QWORD qwLength);
     HRESULT Write(const BYTE *pb, ULONG cb, ULONG *pcbWritten);

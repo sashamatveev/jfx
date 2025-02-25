@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -69,7 +69,8 @@ gboolean       cache_has_enough_data(Cache* cache);
 // Returns true if the cache has enough data for size bytes.
 gboolean       cache_has_enough_data2(Cache* cache, guint64 read_position, guint size);
 
-// Returns number of bytes available to read or 0 if no bytes left
-gint64         cache_bytes_available(Cache* cache);
+// Returns number of bytes available to read or 0 if no bytes left from
+// read_position.
+gint64         cache_bytes_available(Cache* cache, guint64 read_position);
 
 #endif // __CACHE_H__
