@@ -79,10 +79,11 @@ struct _GstMFDemux
 
     gboolean is_flushing;
     gboolean is_eos;
-    gboolean is_fMP4;
     gboolean force_discontinuity;
     gboolean is_demux_initialized;
     gboolean send_new_segment;
+    gboolean start_task_on_first_segment;
+    gboolean is_hls;
 
     gdouble rate;
     gint64 seek_position;

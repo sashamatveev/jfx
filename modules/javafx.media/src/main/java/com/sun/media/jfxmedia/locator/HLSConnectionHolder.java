@@ -368,7 +368,7 @@ final class HLSConnectionHolder extends ConnectionHolder {
             } catch (IOException | URISyntaxException e) {
                 return -1;
             }
-            sendHeader = false;
+            //sendHeader = false;
         }
 
         mediaFile = currentPlaylist.getNextMediaFile();

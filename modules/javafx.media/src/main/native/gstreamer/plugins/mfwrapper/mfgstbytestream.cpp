@@ -41,21 +41,15 @@ template <class T> void SafeRelease(T **ppT)
     }
 }
 
-CMFGSTByteStream::CMFGSTByteStream(HRESULT &hr, QWORD qwLength, GstPad *pSinkPad)
+CMFGSTByteStream::CMFGSTByteStream(HRESULT &hr, QWORD qwLength, GstPad *pSinkPad, BOOL bIsHLS)
 {
     hr = S_OK;
 
-    // If length is not provided we assume it is fMP4
-    if (qwLength == -1)
-        m_bfMP4 = TRUE;
-    else
-        m_bfMP4 = FALSE;
+    m_bfMP4 = bIsHLS;
 
     m_ulRefCount = 0;
     m_qwPosition = 0;
     m_qwLength = qwLength;
-    m_qwSegmentPosition = 0;
-    m_qwSegmentLength = -1;
 
     m_pBytes = NULL;
     m_cbBytes = 0;
@@ -107,8 +101,8 @@ void CMFGSTByteStream::SetSegmentLength(QWORD qwSegmentLength, bool bForce)
     Lock();
     if (bForce || m_bWaitForEvent)
     {
-        m_qwSegmentLength = qwSegmentLength;
-        m_qwSegmentPosition = 0;
+        m_qwLength = qwSegmentLength;
+        m_qwPosition = 0;
     }
     Unlock();
 }
@@ -134,18 +128,27 @@ HRESULT CMFGSTByteStream::CompleteReadData(HRESULT hr)
 
 void CMFGSTByteStream::SignalEOS()
 {
+    TRACE("JFXMEDIA CMFGSTByteStream::SignalEOS()\n");
     m_bIsEOSEventReceived = TRUE;
 }
 
 void CMFGSTByteStream::ClearEOS()
 {
+    TRACE("JFXMEDIA CMFGSTByteStream::ClearEOS()\n");
     m_bIsEOS = FALSE;
     m_bIsEOSEventReceived = FALSE;
 }
 
 BOOL CMFGSTByteStream::IsReload()
 {
-    return m_bIsReload;
+    //return m_bIsReload;
+    bool bIsReload = false;
+    if (m_bfMP4 && !m_bIsEOSEventReceived)
+        bIsReload = true;
+
+    TRACE("JFXMEDIA CMFGSTByteStream::IsReload() %d\n", bIsReload);
+
+    return bIsReload;
 }
 
 // IMFByteStream
@@ -162,7 +165,7 @@ HRESULT CMFGSTByteStream::BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallb
     if (m_readResult != S_OK)
         return m_readResult; // Do not start new read if old one failed.
 
-    TRACE("JFXMEDIA CMFGSTByteStream::BeginRead() cb: %lu m_qwSegmentLength: %llu m_qwSegmentPosition: %llu m_qwPosition: %llu m_qwLength: %llu\n", cb, m_qwSegmentLength, m_qwSegmentPosition, m_qwPosition, m_qwLength);
+    TRACE("JFXMEDIA CMFGSTByteStream::BeginRead() cb: %lu m_qwPosition: %llu m_qwLength: %llu\n", cb, m_qwPosition, m_qwLength);
 
     // Save read request
     m_pBytes = pb;
@@ -242,10 +245,7 @@ HRESULT CMFGSTByteStream::GetLength(QWORD *pqwLength)
     if (pqwLength == NULL)
         return E_FAIL;
 
-    if (m_bfMP4 && !m_bIsEOS)
-        (*pqwLength) = -1;
-    else
-        (*pqwLength) = m_qwLength;
+    (*pqwLength) = m_qwLength;
 
     TRACE("JFXMEDIA CMFGSTByteStream::GetLength() %llu\n", (*pqwLength));
 
@@ -318,17 +318,7 @@ HRESULT CMFGSTByteStream::SetCurrentPosition(QWORD qwPosition)
         return S_OK;
     }
 
-    if (!m_bfMP4)
-    {
-        m_qwPosition = qwPosition;
-    }
-    else if (qwPosition == 0)
-    {
-        // During initialization MF will re-read from 0 several times, so
-        // if position request for 0 reset segment position as well.
-        m_qwPosition = 0;
-        m_qwSegmentPosition = 0;
-    }
+    m_qwPosition = qwPosition;
 
     TRACE("JFXMEDIA CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu S_OK\n", qwPosition, m_qwPosition);
 
@@ -484,37 +474,18 @@ HRESULT CMFGSTByteStream::ReadData()
     // Read data from upstream
     do
     {
-        // Prepare next segment. If we do not have segment info then query it
-        // or if we read entire segment. HLSProgressBuffer will auto switch to
-        // next one, so once we read it just query info for next one.
-        if (m_bfMP4 && (m_qwSegmentLength == -1 || m_qwSegmentPosition >= m_qwSegmentLength))
-        {
-            gint64 data_length = 0;
-            if (gst_pad_peer_query_duration(m_pSinkPad, GST_FORMAT_BYTES, &data_length))
-                SetSegmentLength((QWORD)data_length, true);
-            else
-                return PrepareWaitForData(); // HLS is not ready yet, so wait for it
-        }
         // If length known adjust m_cbBytes to make sure we do not read
         // pass EOS. "progressbuffer" does not handle last buffer nicely
         // and will return EOS if we do not read exact amount of data.
-        else if (!m_bfMP4)
-        {
-            if (m_qwPosition < m_qwLength && (m_qwPosition + m_cbBytes) > m_qwLength)
-                m_cbBytes = m_qwLength - m_qwPosition;
-        }
+        if (m_qwPosition < m_qwLength && (m_qwPosition + m_cbBytes) > m_qwLength)
+            m_cbBytes = m_qwLength - m_qwPosition;
 
         if (m_cbBytesRead < m_cbBytes)
             cbBytes = m_cbBytes - m_cbBytesRead;
         else
             return CompleteReadData(E_FAIL);
 
-        if (m_bfMP4)
-            offset = (guint64)m_qwSegmentPosition;
-        else if (m_qwLength != -1)
-            offset = (guint64)m_qwPosition;
-        else
-            return CompleteReadData(E_FAIL);
+        offset = (guint64)m_qwPosition;
 
         ret = gst_pad_pull_range(m_pSinkPad, offset, (guint)cbBytes, &buf);
         if (ret == GST_FLOW_FLUSHING)
@@ -555,25 +526,25 @@ HRESULT CMFGSTByteStream::PushDataBuffer(GstBuffer* pBuffer)
     if (m_bIsEOSEventReceived)
         m_bIsEOS = TRUE;
 
-    // If we received header buffer it means format change and this buffer
-    // contains new data. For example when we do bitrate switch in HLS.
-    // Do not push this buffer and just ignore it. Once mfdemux reads all
-    // samples it will reload MF Source Reader, so it can re-initialize for
-    // new stream. hlsprogressbuffer will provide this buffer again after
-    // we reload, but without header flag, since it should be cleared once
-    // provided by hlsprogressbuffer.
-    if (GST_BUFFER_FLAG_IS_SET(pBuffer, GST_BUFFER_FLAG_HEADER))
-    {
-        TRACE("JFXMEDIA CMFGSTByteStream::PushDataBuffer() GST_BUFFER_FLAG_HEADER\n");
+    // // If we received header buffer it means format change and this buffer
+    // // contains new data. For example when we do bitrate switch in HLS.
+    // // Do not push this buffer and just ignore it. Once mfdemux reads all
+    // // samples it will reload MF Source Reader, so it can re-initialize for
+    // // new stream. hlsprogressbuffer will provide this buffer again after
+    // // we reload, but without header flag, since it should be cleared once
+    // // provided by hlsprogressbuffer.
+    // if (GST_BUFFER_FLAG_IS_SET(pBuffer, GST_BUFFER_FLAG_HEADER))
+    // {
+    //     TRACE("JFXMEDIA CMFGSTByteStream::PushDataBuffer() GST_BUFFER_FLAG_HEADER\n");
 
-        // INLINE - gst_buffer_unref()
-        gst_buffer_unref(pBuffer);
-        m_bIsReload = TRUE;
-        m_bIsEOS = TRUE;
-        m_qwLength = m_qwPosition;
-        QueueEvent(MEByteStreamCharacteristicsChanged, GUID_NULL, S_OK, NULL);
-        return S_OK;
-    }
+    //     // INLINE - gst_buffer_unref()
+    //     gst_buffer_unref(pBuffer);
+    //     m_bIsReload = TRUE;
+    //     m_bIsEOS = TRUE;
+    //     m_qwLength = m_qwPosition;
+    //     QueueEvent(MEByteStreamCharacteristicsChanged, GUID_NULL, S_OK, NULL);
+    //     return S_OK;
+    // }
 
     GstMapInfo info;
     gboolean unmap = FALSE;
@@ -599,7 +570,6 @@ HRESULT CMFGSTByteStream::PushDataBuffer(GstBuffer* pBuffer)
     {
         m_cbBytesRead += info.size;
         m_qwPosition += info.size;
-        m_qwSegmentPosition += info.size;
     }
 
     if (unmap)
@@ -616,13 +586,6 @@ HRESULT CMFGSTByteStream::PrepareWaitForData()
     Lock();
     m_bWaitForEvent = TRUE;
     Unlock();
-
-    // In HLS mode prepare for next segment
-    if (m_bfMP4)
-    {
-        m_qwSegmentLength = -1;
-        m_qwSegmentPosition = 0;
-    }
 
     return S_OK;
 }

@@ -40,7 +40,7 @@ static const GUID GUID_NULL =
 class CMFGSTByteStream : public IMFByteStream, IMFMediaEventGenerator
 {
 public:
-    CMFGSTByteStream(HRESULT &hr, QWORD qwLength, GstPad *pSinkPad);
+    CMFGSTByteStream(HRESULT &hr, QWORD qwLength, GstPad *pSinkPad, BOOL bIsHLS);
     ~CMFGSTByteStream();
 
     void Shutdown();
@@ -100,8 +100,6 @@ private:
 
     QWORD m_qwPosition;
     QWORD m_qwLength;
-    QWORD m_qwSegmentPosition;
-    QWORD m_qwSegmentLength;
 
     // Pointer to store read bytes
     BYTE *m_pBytes;

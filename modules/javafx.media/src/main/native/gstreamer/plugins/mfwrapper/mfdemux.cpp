@@ -48,6 +48,12 @@ using namespace std;
 
 #define MAX_CODEC_DATA_SIZE 256
 
+enum
+{
+    PROP_0,
+    PROP_HLS_MODE
+};
+
 GST_DEBUG_CATEGORY_STATIC(gst_mfdemux_debug);
 #define GST_CAT_DEFAULT gst_mfdemux_debug
 
@@ -78,6 +84,7 @@ GST_STATIC_PAD_TEMPLATE ("audio",
 
 // Forward declarations
 static void gst_mfdemux_dispose(GObject *object);
+static void mfdemux_set_property(GObject *object, guint prop_id, const GValue *value, GParamSpec *spec);
 
 static GstFlowReturn mfdemux_chain(GstPad *pad, GstObject *parent, GstBuffer *buf);
 static void mfdemux_loop(GstPad *pad);
@@ -141,11 +148,17 @@ static void gst_mfdemux_class_init(GstMFDemuxClass *klass)
     GstElementClass *element_class = (GstElementClass*)klass;
     GObjectClass *gobject_class = (GObjectClass*)klass;
 
+    gobject_class->set_property = mfdemux_set_property;
+
     gst_element_class_set_metadata(element_class,
         "MFDemux",
         "Codec/Decoder/Audio/Video",
         "Media Foundation Demux",
         "Oracle Corporation");
+
+    g_object_class_install_property (gobject_class, PROP_HLS_MODE,
+        g_param_spec_boolean ("hls-mode", "HLS Mode", "HTTP Live Streaming Mode", FALSE,
+        static_cast<GParamFlags>(G_PARAM_WRITABLE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_STRINGS)));
 
     gst_element_class_add_pad_template(element_class,
         gst_static_pad_template_get(&src_video_factory));
@@ -180,10 +193,11 @@ static void gst_mfdemux_init(GstMFDemux *demux)
 
     demux->is_flushing = FALSE;
     demux->is_eos = FALSE;
-    demux->is_fMP4 = FALSE;
     demux->is_demux_initialized = FALSE;
     demux->force_discontinuity = FALSE;
     demux->send_new_segment = FALSE;
+    demux->start_task_on_first_segment = FALSE;
+    demux->is_hls = FALSE;
 
     demux->rate = 1.0;
     demux->seek_position = 0;
@@ -223,6 +237,21 @@ static void gst_mfdemux_init(GstMFDemux *demux)
 
     if (bCallCoUninitialize)
         CoUninitialize();
+}
+
+static void mfdemux_set_property(GObject *object, guint prop_id,
+    const GValue *value, GParamSpec *spec)
+{
+    GstMFDemux *demux = GST_MFDEMUX(object);
+    switch (prop_id)
+    {
+    case PROP_HLS_MODE:
+        if (g_value_get_boolean(value))
+            demux->is_hls = TRUE;
+        break;
+    default:
+        break;
+    }
 }
 
 static void gst_mfdemux_dispose(GObject* object)
@@ -291,6 +320,7 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     {
     case GST_EVENT_SEGMENT:
     {
+        TRACE("JFXMEDIA mfdemux_sink_event() GST_EVENT_SEGMENT\n");
         demux->force_discontinuity = TRUE;
         demux->is_eos = FALSE;
 
@@ -326,6 +356,7 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     break;
     case GST_EVENT_EOS:
     {
+        TRACE("JFXMEDIA mfdemux_sink_event() GST_EVENT_EOS\n");
         demux->is_eos = TRUE;
 
         if (demux->pGSTMFByteStream)
@@ -338,6 +369,25 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     break;
     case GST_EVENT_CAPS:
     {
+        GstStructure *s = NULL;
+        const gchar *mimetype = NULL;
+        GstCaps *caps = NULL;
+
+        gst_event_parse_caps(event, &caps);
+        if (caps != NULL)
+        {
+            s = gst_caps_get_structure (caps, 0);
+            if (s != NULL)
+            {
+                mimetype = gst_structure_get_name (s);
+                if (mimetype != NULL)
+                {
+                    TRACE("JFXMEDIA mfdemux_sink_event() GST_EVENT_CAPS %s\n",
+                        mimetype);
+                }
+            }
+        }
+
         // INLINE - gst_event_unref()
         gst_event_unref(event);
         ret = TRUE;
@@ -353,6 +403,7 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
         gst_event_unref(event);
         ret = TRUE;
     }
+    break;
     case FX_EVENT_SEGMENT_READY:
     {
         gint64 size = -1;
@@ -363,10 +414,19 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
                 size = -1;
         }
 
+        TRACE("JFXMEIDA mfdemux_sink_event() FX_EVENT_SEGMENT_READY size %lld\n", size);
+
         if (demux->pGSTMFByteStream)
         {
-            demux->pGSTMFByteStream->SetSegmentLength((QWORD)size, false);
+            demux->pGSTMFByteStream->SetSegmentLength((QWORD)size, true);
             demux->pGSTMFByteStream->ReadRangeAvailable();
+        }
+
+        // Start task if needed
+        if (demux->start_task_on_first_segment)
+        {
+            gst_pad_start_task(pad, (GstTaskFunction) mfdemux_loop, pad, NULL);
+            demux->start_task_on_first_segment = FALSE;
         }
 
         // INLINE - gst_event_unref()
@@ -565,14 +625,14 @@ static gboolean mfdemux_init_demux(GstMFDemux *demux, GstCaps *caps)
     {
         data_length = -1;
     }
-    else
+    else if (!demux->is_hls)
     {
         demux->send_new_segment = TRUE; // Lenght is know, which means it is
         // HTTP/FILE, so we need to provide segment. HLS progressbuffer will
         // send segment events for us.
     }
 
-    demux->pGSTMFByteStream = new (nothrow) CMFGSTByteStream(hr, (QWORD)data_length, demux->sink_pad);
+    demux->pGSTMFByteStream = new (nothrow) CMFGSTByteStream(hr, (QWORD)data_length, demux->sink_pad, demux->is_hls);
     if (FAILED(hr) || demux->pGSTMFByteStream == NULL)
         return FALSE;
 
@@ -1127,6 +1187,7 @@ static void mfdemux_loop(GstPad * pad)
     if (!demux->is_demux_initialized)
     {
         GST_PAD_STREAM_UNLOCK(pad);
+        TRACE("JFXMEDIA mfdemux_loop() init and configure demux ...\n");
         if (!mfdemux_init_demux(demux, NULL) ||
             !mfdemux_configure_demux(demux))
         {
@@ -1137,6 +1198,7 @@ static void mfdemux_loop(GstPad * pad)
             gst_pad_pause_task(pad);
             return;
         }
+        TRACE("JFXMEDIA mfdemux_loop() init and configure demux DONE\n");
         GST_PAD_STREAM_LOCK(pad);
     }
 
@@ -1181,8 +1243,12 @@ static void mfdemux_loop(GstPad * pad)
             if (demux->pGSTMFByteStream->IsReload())
             {
                 mfdemux_reload_demux(demux);
-                // Keep going after realod. Source Reader will get re-initialized
+                // Keep going after reload. Source Reader will get re-initialized
                 // when we re-enter mfdemux_loop().
+
+                // Ask HLS for next segment
+                gst_pad_push_event(demux->sink_pad, gst_event_new_custom(
+                        static_cast<GstEventType>(FX_EVENT_NEXT_SEGMENT), NULL));
             }
             else
             {
@@ -1203,7 +1269,8 @@ static void mfdemux_loop(GstPad * pad)
 
         if (pSample != NULL)
         {
-            #if ENABLE_TRACE
+            //#if ENABLE_TRACE
+            #if 0
             {
                 LONGLONG nsSampleTime = 0;
                 DWORD cbTotalLength = 0;
@@ -1274,15 +1341,26 @@ static gboolean mfdemux_activate_mode(GstPad *pad, GstObject *parent, GstPadMode
         if (active)
         {
             g_mutex_lock(&demux->lock);
+            demux->start_task_on_first_segment = demux->is_hls;
             demux->src_result = GST_FLOW_OK;
             g_mutex_unlock(&demux->lock);
 
-            res = gst_pad_start_task(pad, (GstTaskFunction) mfdemux_loop,
-                    pad, NULL);
+            if (demux->is_hls)
+            {
+                TRACE("JFXMEDIA mfdemux_activate_mode() mfdemux_loop() will be started on event\n");
+                res = TRUE;
+            }
+            else
+            {
+                TRACE("JFXMEDIA mfdemux_activate_mode() starting mfdemux_loop()\n");
+                res = gst_pad_start_task(pad, (GstTaskFunction) mfdemux_loop,
+                        pad, NULL);
+            }
         }
         else
         {
             g_mutex_lock(&demux->lock);
+            demux->start_task_on_first_segment = FALSE;
             demux->src_result = GST_FLOW_ERROR;
             g_mutex_unlock(&demux->lock);
 

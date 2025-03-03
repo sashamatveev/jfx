@@ -755,6 +755,9 @@ uint32_t CGstPipelineFactory::CreateAVPipeline(bool bConvertFormat, GstElement* 
     if (bAudioStream) {
         g_object_set(demuxer, "disable-mp2t-pts-reset", TRUE, NULL);
     }
+    if (pOptions->GetHLSModeEnabled()) {
+        g_object_set(demuxer, "hls-mode", TRUE, NULL);
+    }
     if (!gst_bin_add (GST_BIN (pipeline), source))
         return ERROR_GSTREAMER_BIN_ADD_ELEMENT;
     uRetCode = AttachToSource(GST_BIN (pipeline), source, (*pElements)[SOURCE_BUFFER], demuxer);
