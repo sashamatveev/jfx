@@ -37,20 +37,19 @@
 static const GUID GUID_NULL =
 { 0x00000000, 0x0000, 0x0000, { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } };
 
-class CMFGSTByteStream : public IMFByteStream, IMFMediaEventGenerator
+class CMFGSTByteStream : public IMFByteStream
 {
 public:
     CMFGSTByteStream(HRESULT &hr, QWORD qwLength, GstPad *pSinkPad, BOOL bIsHLS);
     ~CMFGSTByteStream();
 
-    void Shutdown();
-
+    void Reset();
     HRESULT ReadRangeAvailable();
-    void SetSegmentLength(QWORD qwSegmentLength, bool bForce);
+    void SetStreamLength(QWORD qwLength);
     bool IsSeekSupported();
     HRESULT CompleteReadData(HRESULT hr);
-    void SignalEOS();
-    void ClearEOS();
+//     void SignalEOS();
+//     void ClearEOS();
     BOOL IsReload();
 
     // IMFByteStream
@@ -73,22 +72,12 @@ public:
     HRESULT SetLength(QWORD qwLength);
     HRESULT Write(const BYTE *pb, ULONG cb, ULONG *pcbWritten);
 
-    // IMFMediaEventGenerator
-    HRESULT BeginGetEvent(IMFAsyncCallback* pCallback, IUnknown* pState);
-    HRESULT EndGetEvent(IMFAsyncResult* pResult, IMFMediaEvent** ppEvent);
-    HRESULT GetEvent(DWORD dwFlags, IMFMediaEvent** ppEvent);
-    HRESULT QueueEvent(MediaEventType met, REFGUID extendedType, HRESULT hrStatus, const PROPVARIANT* pvValue);
-
     // IUnknown
     HRESULT QueryInterface(REFIID riid, void **ppvObject);
     ULONG AddRef();
     ULONG Release();
 
 private:
-    // IMFMediaEventGenerator
-    HRESULT CheckEventQueueShutdown() const;
-    HRESULT ShutdownEventQueue();
-
     HRESULT ReadData();
     HRESULT PushDataBuffer(GstBuffer *pBuffer);
     HRESULT PrepareWaitForData();
@@ -123,11 +112,6 @@ private:
     CRITICAL_SECTION m_csLock;
 
     GstPad *m_pSinkPad;
-
-    // IMFMediaEventGenerator
-    CRITICAL_SECTION m_csEventLock;
-    IMFMediaEventQueue *m_pEventQueue;
-    BOOL m_bEventQueueShutdown;
 };
 
 #endif // __MF_GST_BYTESTREAM_H__

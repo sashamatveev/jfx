@@ -1390,6 +1390,47 @@ static gboolean mfwrapper_push_sink_event(GstMFWrapper *decoder, GstEvent *event
 
     return ret;
 }
+static void mfwrapper_drain_output(GstMFWrapper *decoder)
+{
+    if (decoder == NULL || decoder->pDecoder == NULL)
+        return;
+
+    if (decoder->is_decoder_error)
+        return;
+
+    if (!decoder->is_decoder_initialized)
+        return;
+
+    // Let decoder know that we got end of stream
+    HRESULT hr = decoder->pDecoder->
+        ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0);
+
+    // Ask decoder to produce all remaining data
+    if (SUCCEEDED(hr))
+    {
+        decoder->pDecoder->
+            ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0);
+    }
+
+    // Deliver remaining data
+    gint po_ret;
+    do
+    {
+        po_ret = mfwrapper_process_output(decoder);
+    } while (po_ret == PO_DELIVERED);
+
+    for (int i = 0; i < MAX_COLOR_CONVERT; i++)
+    {
+        if (decoder->pColorConvert[i])
+        {
+            hr = decoder->pColorConvert[i]->
+                ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0);
+            if (SUCCEEDED(hr))
+                hr = decoder->pColorConvert[i]->
+                    ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
+        }
+    }
+}
 
 static gboolean mfwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent *event)
 {
@@ -1416,7 +1457,7 @@ static gboolean mfwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent *e
     break;
     case GST_EVENT_FLUSH_STOP:
     {
-        if (!decoder->is_decoder_error)
+        if (decoder->pDecoder && !decoder->is_decoder_error)
         {
             decoder->pDecoder->
                     ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
@@ -1439,38 +1480,7 @@ static gboolean mfwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent *e
     {
         decoder->is_eos_received = TRUE;
 
-        if (!decoder->is_decoder_error)
-        {
-            // Let decoder know that we got end of stream
-            hr = decoder->pDecoder->
-                    ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0);
-
-            // Ask decoder to produce all remaining data
-            if (SUCCEEDED(hr))
-            {
-                decoder->pDecoder->
-                        ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0);
-            }
-
-            // Deliver remaining data
-            gint po_ret;
-            do
-            {
-                po_ret = mfwrapper_process_output(decoder);
-            } while (po_ret == PO_DELIVERED);
-
-            for (int i = 0; i < MAX_COLOR_CONVERT; i++)
-            {
-                if (decoder->pColorConvert[i])
-                {
-                    hr = decoder->pColorConvert[i]->
-                            ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0);
-                    if (SUCCEEDED(hr))
-                        hr = decoder->pColorConvert[i]->
-                                ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
-                }
-            }
-        }
+        mfwrapper_drain_output(decoder);
 
         // We done pushing all frames. Deliver EOS.
         ret = mfwrapper_push_sink_event(decoder, event);
@@ -1483,6 +1493,21 @@ static gboolean mfwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent *e
         GstCaps *caps;
 
         gst_event_parse_caps(event, &caps);
+
+        if (decoder->pDecoder && !decoder->is_decoder_error)
+        {
+            decoder->pDecoder->
+                ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
+            for (int i = 0; i < MAX_COLOR_CONVERT; i++)
+            {
+                if (decoder->pColorConvert[i])
+                {
+                    decoder->pColorConvert[i]->
+                        ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
+                }
+            }
+        }
+
         if (!mfwrapper_sink_set_caps(pad, parent, caps))
         {
             gst_element_message_full(GST_ELEMENT(decoder), GST_MESSAGE_ERROR,
@@ -1576,73 +1601,6 @@ static HRESULT mfwrapper_load_decoder(GstMFWrapper *decoder, GstCaps *caps)
     CoTaskMemFree(ppActivate);
 
     return hr;
-}
-
-gsize mfwrapper_get_hevc_config(void *in, gsize in_size, BYTE *out, gsize out_size)
-{
-    guintptr bdata = (guintptr)in;
-    guint8 arrayCount = 0;
-    guint16 nalUnitsCount = 0;
-    guint16 nalUnitLength = 0;
-    guint ii = 0;
-    guint jj = 0;
-    gsize in_bytes_count = 22;
-    gsize out_bytes_count = 0;
-    guint8 startCode[4] = { 0x00, 0x00, 0x00, 0x01 };
-
-    if (in_bytes_count > in_size)
-        return 0;
-
-    // Skip first 22 bytes
-    bdata += in_bytes_count;
-
-    // Get array count
-    arrayCount = *(guint8*)bdata;
-    bdata++; in_bytes_count++;
-
-    for (ii = 0; ii < arrayCount; ii++) {
-        if ((in_bytes_count + 3) > in_size)
-            return 0;
-
-        // Skip 1 byte, not needed
-        bdata++; in_bytes_count++;
-
-        // 2 bytes number of nal units in array
-        nalUnitsCount = ((guint16)*(guint8*)bdata) << 8;
-        bdata++; in_bytes_count++;
-        nalUnitsCount |= (guint16)*(guint8*)bdata;
-        bdata++; in_bytes_count++;
-
-        for (jj = 0; jj < nalUnitsCount; jj++) {
-            if ((in_bytes_count + 2) > in_size)
-                return 0;
-
-            nalUnitLength = ((guint16)*(guint8*)bdata) << 8;
-            bdata++; in_bytes_count++;
-            nalUnitLength |= (guint16)*(guint8*)bdata;
-            bdata++; in_bytes_count++;
-
-            if ((out_bytes_count + 4) > out_size)
-                return 0;
-
-            // Set start code
-            memcpy(out, &startCode[0], sizeof(startCode));
-            out += sizeof(startCode); out_bytes_count += sizeof(startCode);
-
-            if ((out_bytes_count + nalUnitLength) > out_size)
-                return 0;
-
-            if ((in_bytes_count + nalUnitLength) > in_size)
-                return 0;
-
-            // Copy nal unit
-            memcpy(out, (guint8*)bdata, nalUnitLength);
-            bdata += nalUnitLength; in_bytes_count += nalUnitLength;
-            out += nalUnitLength; out_bytes_count += nalUnitLength;
-        }
-    }
-
-    return out_bytes_count;
 }
 
 static HRESULT mfwrapper_set_input_media_type(GstMFWrapper *decoder, GstCaps *caps)

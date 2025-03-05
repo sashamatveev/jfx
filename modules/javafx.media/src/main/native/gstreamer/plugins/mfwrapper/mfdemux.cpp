@@ -88,6 +88,7 @@ static void mfdemux_set_property(GObject *object, guint prop_id, const GValue *v
 
 static GstFlowReturn mfdemux_chain(GstPad *pad, GstObject *parent, GstBuffer *buf);
 static void mfdemux_loop(GstPad *pad);
+static void mfdemux_reload_demux(GstMFDemux *demux, gboolean bSeek);
 
 static gboolean mfdemux_sink_event(GstPad *pad, GstObject *parent, GstEvent *event);
 
@@ -258,9 +259,6 @@ static void gst_mfdemux_dispose(GObject* object)
 {
     GstMFDemux *demux = GST_MFDEMUX(object);
 
-    if (demux->pGSTMFByteStream != NULL)
-        demux->pGSTMFByteStream->Shutdown();
-
     SafeRelease(&demux->pSourceReader);
     SafeRelease(&demux->pIMFByteStream);
 
@@ -324,8 +322,8 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
         demux->force_discontinuity = TRUE;
         demux->is_eos = FALSE;
 
-        if (demux->pGSTMFByteStream)
-            demux->pGSTMFByteStream->ClearEOS();
+        // if (demux->pGSTMFByteStream)
+        //     demux->pGSTMFByteStream->ClearEOS();
 
         // Cache segment event if we not ready yet
         if ((demux->audio_src_pad != NULL && gst_pad_is_linked(demux->audio_src_pad)) ||
@@ -359,8 +357,8 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
         TRACE("JFXMEDIA mfdemux_sink_event() GST_EVENT_EOS\n");
         demux->is_eos = TRUE;
 
-        if (demux->pGSTMFByteStream)
-            demux->pGSTMFByteStream->SignalEOS();
+        // if (demux->pGSTMFByteStream)
+        //     demux->pGSTMFByteStream->SignalEOS();
 
         // INLINE - gst_event_unref()
         gst_event_unref(event);
@@ -396,6 +394,8 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     // This event appears only in pull mode during outrange reading or seeking.
     case FX_EVENT_RANGE_READY:
     {
+        TRACE("JFXMEDIA mfdemux_sink_event() FX_EVENT_RANGE_READY\n");
+
         if (demux->pGSTMFByteStream)
             demux->pGSTMFByteStream->ReadRangeAvailable();
 
@@ -417,10 +417,10 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
         TRACE("JFXMEIDA mfdemux_sink_event() FX_EVENT_SEGMENT_READY size %lld\n", size);
 
         if (demux->pGSTMFByteStream)
-        {
-            demux->pGSTMFByteStream->SetSegmentLength((QWORD)size, true);
-            demux->pGSTMFByteStream->ReadRangeAvailable();
-        }
+            demux->pGSTMFByteStream->SetStreamLength((QWORD)size);
+
+        // Force discontinuity, since it is new stream
+        demux->force_discontinuity = TRUE;
 
         // Start task if needed
         if (demux->start_task_on_first_segment)
@@ -500,10 +500,10 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
             g_mutex_unlock(&demux->lock);
 
             demux->is_eos = FALSE;
-            // Clear EOS on byte stream, since SourceReader will start
-            // reading it during seek.
-            if (demux->pGSTMFByteStream)
-                demux->pGSTMFByteStream->ClearEOS();
+            // // Clear EOS on byte stream, since SourceReader will start
+            // // reading it during seek.
+            // if (demux->pGSTMFByteStream)
+            //     demux->pGSTMFByteStream->ClearEOS();
 
             // Get seek description from the event.
             gst_event_parse_seek (event, &rate, &format, &flags,
@@ -536,11 +536,16 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                 // Wait for streaming thread to exit
                 gst_pad_pause_task(demux->sink_pad);
 
-                if (demux->pGSTMFByteStream->IsSeekSupported())
+                if (demux->is_hls)
+                {
+                    // Upstream will handle and unref event
+                    ret = gst_pad_push_event(demux->sink_pad, event);
+                }
+                else
                 {
                     demux->rate = rate;
                     demux->seek_position = start;
-                    demux->send_new_segment = TRUE;
+                    demux->send_new_segment = !demux->is_hls;
 
                     PROPVARIANT pv = { 0 };
                     pv.vt = VT_I8;
@@ -552,18 +557,6 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                     gst_event_unref(event);
                     ret = TRUE; // We handle event
                 }
-                else
-                {
-                    demux->pGSTMFByteStream->SetSegmentLength(-1, true);
-                    // Upstream will handle and unref event
-                    ret = gst_pad_push_event(demux->sink_pad, event);
-
-                    PROPVARIANT pv = { 0 };
-                    pv.vt = VT_I8;
-                    pv.hVal.QuadPart = (LONGLONG)(0);
-                    demux->pSourceReader->SetCurrentPosition(GUID_NULL, pv);
-                    PropVariantClear(&pv);
-                }
 
                 if (flags & GST_SEEK_FLAG_FLUSH)
                 {
@@ -572,13 +565,21 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                     mfdemux_push_sink_event(demux, e);
                 }
 
-                // Start streaming thread
                 g_mutex_lock(&demux->lock);
                 demux->src_result = GST_FLOW_OK;
                 g_mutex_unlock(&demux->lock);
 
-                gst_pad_start_task(demux->sink_pad, (GstTaskFunction) mfdemux_loop,
-                        demux->sink_pad, NULL);
+                if (demux->is_hls)
+                {
+                    // For HLS just reload
+                    mfdemux_reload_demux(demux, TRUE);
+                }
+                else
+                {
+                    // Start streaming thread
+                    gst_pad_start_task(demux->sink_pad, (GstTaskFunction) mfdemux_loop,
+                            demux->sink_pad, NULL);
+                }
             }
         }
         break;
@@ -590,19 +591,47 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
     return ret;
 }
 
-static void mfdemux_reload_demux(GstMFDemux *demux)
+static void mfdemux_reload_demux(GstMFDemux *demux, gboolean bSeek)
 {
-    if (demux->pGSTMFByteStream != NULL)
-        demux->pGSTMFByteStream->Shutdown();
+    if (demux->pGSTMFByteStream == NULL)
+        return; // Unlikely
 
+    // Release source reader.
     SafeRelease(&demux->pSourceReader);
-    SafeRelease(&demux->pIMFByteStream);
 
-    if (demux->audioFormat.codec_data != NULL)
+    // It might change.
+    demux->audio_stream_index = -1;
+    demux->video_stream_index = -1;
+
+    // Reset GSTMFByteStream object.
+    demux->pGSTMFByteStream->Reset();
+
+    // Set length to -1.
+    demux->pGSTMFByteStream->SetStreamLength(-1);
+
+    // Ask HLS for next segment if not seek. Seek will reset HLS buffer, so
+    // it will be starting from right segment we need.
+    if (!bSeek)
     {
-        // INLINE - gst_buffer_unref()
-        gst_buffer_unref(demux->audioFormat.codec_data);
-        demux->audioFormat.codec_data = NULL;
+        gst_pad_push_event(demux->sink_pad, gst_event_new_custom(
+                                                static_cast<GstEventType>(FX_EVENT_NEXT_SEGMENT), NULL));
+
+        // If next segment is available we will receive FX_EVENT_SEGMENT_READY
+        // during FX_EVENT_NEXT_SEGMENT call. In this case we good to go, but
+        // otherwise we need to wait. FX_EVENT_NEXT_SEGMENT is serialized event
+        // and pad lock will be held. Same lock is held during reload.
+
+        // Check length of byte stream.
+        QWORD qwLength = -1;
+        if (SUCCEEDED(demux->pGSTMFByteStream->GetLength(&qwLength)))
+        {
+            if (qwLength == -1) // If still unknown start on event
+                demux->start_task_on_first_segment = TRUE;
+        }
+    }
+    else
+    {
+        demux->start_task_on_first_segment = TRUE;
     }
 
     demux->is_demux_initialized = FALSE;
@@ -618,27 +647,24 @@ static gboolean mfdemux_init_demux(GstMFDemux *demux, GstCaps *caps)
     gint64 data_length = 0;
     if (!gst_pad_peer_query_duration(demux->sink_pad, GST_FORMAT_BYTES, &data_length))
     {
-        data_length = -1; // -1 if unknown for MF (QWORD is ULONGLONG)
-        demux->is_fMP4 = TRUE;
-    }
-    else if (demux->is_fMP4)
-    {
-        data_length = -1;
-    }
-    else if (!demux->is_hls)
-    {
-        demux->send_new_segment = TRUE; // Lenght is know, which means it is
-        // HTTP/FILE, so we need to provide segment. HLS progressbuffer will
-        // send segment events for us.
+        TRACE("JFXMEDIA Error: gst_pad_peer_query_duration(GST_FORMAT_BYTES) failed\n");
+        return false;
     }
 
-    demux->pGSTMFByteStream = new (nothrow) CMFGSTByteStream(hr, (QWORD)data_length, demux->sink_pad, demux->is_hls);
-    if (FAILED(hr) || demux->pGSTMFByteStream == NULL)
-        return FALSE;
+    // For HTTP/HTTPS/FILE we need to provide segment. For HLS no need, since
+    // hlsprogressbuffer will handle it.
+    demux->send_new_segment = !demux->is_hls;
 
-    hr = demux->pGSTMFByteStream->QueryInterface(IID_IMFByteStream, (void**)&demux->pIMFByteStream);
-    if (FAILED(hr) || demux->pIMFByteStream == NULL)
-        return FALSE;
+    if (demux->pGSTMFByteStream == NULL)
+    {
+        demux->pGSTMFByteStream = new (nothrow) CMFGSTByteStream(hr, (QWORD)data_length, demux->sink_pad, demux->is_hls);
+        if (FAILED(hr) || demux->pGSTMFByteStream == NULL)
+            return FALSE;
+
+        hr = demux->pGSTMFByteStream->QueryInterface(IID_IMFByteStream, (void**)&demux->pIMFByteStream);
+        if (FAILED(hr) || demux->pIMFByteStream == NULL)
+            return FALSE;
+    }
 
     hr = MFCreateSourceReaderFromByteStream(demux->pIMFByteStream, NULL, &demux->pSourceReader);
     if (FAILED(hr) || demux->pSourceReader == NULL)
@@ -788,6 +814,15 @@ static gboolean mfdemux_configure_audio_stream(GstMFDemux *demux, gboolean *hasA
 
     if (SUCCEEDED(hr) && demux->audioFormat.codecID == JFX_CODEC_ID_AAC)
     {
+        // When we reload codec_data might be already set, so unref it for
+        // new codec_data.
+        if (demux->audioFormat.codec_data != NULL)
+        {
+            // INLINE - gst_buffer_unref()
+            gst_buffer_unref(demux->audioFormat.codec_data);
+            demux->audioFormat.codec_data = NULL;
+        }
+
         pMediaType->GetUINT32(MF_MT_AUDIO_NUM_CHANNELS,
                 &demux->audioFormat.uiChannels);
         pMediaType->GetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND,
@@ -1121,6 +1156,11 @@ static GstFlowReturn mfdemux_deliver_sample(GstMFDemux *demux, GstPad* pad,
         if (bDiscontinuity)
             GST_BUFFER_FLAG_SET(pBuffer, GST_BUFFER_FLAG_DISCONT);
     }
+    if (SUCCEEDED(hr) && demux->force_discontinuity)
+    {
+        GST_BUFFER_FLAG_SET(pBuffer, GST_BUFFER_FLAG_DISCONT);
+        demux->force_discontinuity = FALSE;
+    }
 
     // Before pushing buffer send new segment if needed
     if (demux->send_new_segment)
@@ -1218,7 +1258,8 @@ static void mfdemux_loop(GstPad * pad)
         return;
     }
 
-    DWORD dwControlFlags = demux->is_eos ? MF_SOURCE_READER_CONTROLF_DRAIN : 0;
+    //DWORD dwControlFlags = demux->is_eos ? MF_SOURCE_READER_CONTROLF_DRAIN : 0;
+    DWORD dwControlFlags = 0;
     DWORD dwActualStreamIndex = 0;
     DWORD dwStreamFlags = 0;
     LONGLONG llTimestamp = -1;
@@ -1235,20 +1276,10 @@ static void mfdemux_loop(GstPad * pad)
     {
         if ((dwStreamFlags & MF_SOURCE_READERF_ENDOFSTREAM) == MF_SOURCE_READERF_ENDOFSTREAM)
         {
-            // Before delivering EOS, check if we actuallyy doing reload during
-            // format change. During format change GSTMFByteStream will signal
-            // Source Reader EOS, so it can produce all samples and will set
-            // reload flag for us. There is no better way to handle such case
-            // for now.
-            if (demux->pGSTMFByteStream->IsReload())
+            // Before delivering EOS, check if we actually doing reload.
+            if (!demux->is_eos && demux->pGSTMFByteStream->IsReload())
             {
-                mfdemux_reload_demux(demux);
-                // Keep going after reload. Source Reader will get re-initialized
-                // when we re-enter mfdemux_loop().
-
-                // Ask HLS for next segment
-                gst_pad_push_event(demux->sink_pad, gst_event_new_custom(
-                        static_cast<GstEventType>(FX_EVENT_NEXT_SEGMENT), NULL));
+                mfdemux_reload_demux(demux, FALSE);
             }
             else
             {
@@ -1318,7 +1349,7 @@ static void mfdemux_loop(GstPad * pad)
         result = demux->src_result;
     g_mutex_unlock(&demux->lock);
 
-    if (result != GST_FLOW_OK)
+    if (result != GST_FLOW_OK || demux->start_task_on_first_segment)
         gst_pad_pause_task(pad);
 }
 
