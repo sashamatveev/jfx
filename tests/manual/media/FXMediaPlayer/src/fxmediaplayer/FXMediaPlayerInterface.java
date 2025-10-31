@@ -25,6 +25,7 @@
 
 package fxmediaplayer;
 
+import fxmediaplayer.test.MediaPlayerTester;
 import javafx.scene.image.Image;
 import javafx.scene.media.MediaPlayer;
 import javafx.scene.media.MediaView;
@@ -44,6 +45,8 @@ public interface FXMediaPlayerInterface {
     public MediaView getMediaView();
 
     public void setScrubbing(boolean isScrubbingOn);
+
+    public void setTester(MediaPlayerTester mediaPlayerTester);
 
     public boolean getScrubbing();
 }

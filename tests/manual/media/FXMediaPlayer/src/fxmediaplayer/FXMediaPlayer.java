@@ -29,6 +29,8 @@ import fxmediaplayer.control.MediaPlayerControl;
 import fxmediaplayer.info.MediaPlayerInfo;
 import fxmediaplayer.menu.MediaPlayerMenu;
 import fxmediaplayer.states.MediaPlayerStates;
+import fxmediaplayer.test.MediaPlayerTester;
+
 import java.lang.ref.WeakReference;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -68,6 +70,7 @@ public class FXMediaPlayer extends Application implements FXMediaPlayerInterface
     private Timer cursorTimer = null;
     private long lastMouseMovedTime = 0;
     private boolean isScrubbingOn = false;
+    private MediaPlayerTester mediaPlayerTester = null;
 
     public static void main(String[] args) {
         Application.launch(args);
@@ -247,6 +250,11 @@ public class FXMediaPlayer extends Application implements FXMediaPlayerInterface
     @Override
     public void setScrubbing(boolean isScrubbingOn) {
         this.isScrubbingOn = isScrubbingOn;
+    }
+
+    @Override
+    public void setTester(MediaPlayerTester mediaPlayerTester) {
+        this.mediaPlayerTester = mediaPlayerTester;
     }
 
     @Override

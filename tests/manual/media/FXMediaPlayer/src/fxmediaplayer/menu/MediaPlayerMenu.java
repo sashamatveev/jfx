@@ -26,6 +26,7 @@
 package fxmediaplayer.menu;
 
 import fxmediaplayer.FXMediaPlayerInterface;
+import fxmediaplayer.test.MediaPlayerTester;
 import javafx.event.ActionEvent;
 import javafx.scene.control.Button;
 import javafx.scene.control.ToggleButton;
@@ -42,7 +43,9 @@ public class MediaPlayerMenu {
     private ToggleButton buttonSmooth = null;
     private ToggleButton buttonPreserveRatio = null;
     private ToggleButton buttonScrubbing = null;
+    private Button buttonTest = null;
     private MediaPlayerMenuOpenDialog openDialog = null;
+    private MediaPlayerTester mediaPlayerTester = null;
 
     public MediaPlayerMenu(FXMediaPlayerInterface FXMediaPlayer) {
         this.FXMediaPlayer = FXMediaPlayer;
@@ -99,6 +102,12 @@ public class MediaPlayerMenu {
                 onButtonScrubbing();
             });
             toolBar.getItems().add(buttonScrubbing);
+
+            buttonTest = new Button("Test");
+            buttonTest.setOnAction((ActionEvent event) -> {
+                onButtonTest();
+            });
+            toolBar.getItems().add(buttonTest);
         }
 
         return toolBar;
@@ -135,5 +144,14 @@ public class MediaPlayerMenu {
 
     private void onButtonScrubbing() {
         FXMediaPlayer.setScrubbing(buttonScrubbing.isSelected());
+    }
+
+    private void onButtonTest() {
+        if (mediaPlayerTester == null) {
+            mediaPlayerTester = new MediaPlayerTester();
+            FXMediaPlayer.setTester(mediaPlayerTester);
+        }
+
+        mediaPlayerTester.openTesterWindow();
     }
 }
