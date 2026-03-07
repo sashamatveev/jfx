@@ -109,6 +109,10 @@ gst_vec_deque_new (gsize initial_size)
   GstVecDeque *array;
 
   array = gst_vec_deque_new_for_struct (sizeof (gpointer), initial_size);
+#ifdef GSTREAMER_LITE
+  if (!array)
+    return NULL;
+#endif // GSTREAMER_LITE
   array->struct_array = FALSE;
   return array;
 }
