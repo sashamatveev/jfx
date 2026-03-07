@@ -803,6 +803,10 @@ gst_caps_features_get_nth_id (const GstCapsFeatures * features, guint i)
   g_return_val_if_fail (i < features->array->len, 0);
 
   feature_str = gst_caps_features_get_nth_id_str (features, i);
+#ifdef GSTREAMER_LITE
+  if (!feature_str)
+    return 0;
+#endif // GSTREAMER_LITE
 
   quark = g_quark_from_string (gst_id_str_as_str (feature_str));
   return quark;

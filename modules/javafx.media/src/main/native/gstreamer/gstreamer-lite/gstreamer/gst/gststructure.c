@@ -871,8 +871,16 @@ gst_structure_has_name (const GstStructure * structure, const gchar * name)
   g_return_val_if_fail (structure != NULL, FALSE);
   g_return_val_if_fail (name != NULL, FALSE);
 
+#ifndef GSTREAMER_LITE
   return gst_id_str_is_equal_to_str (gst_structure_get_name_id_str (structure),
       name);
+#else // GSTREAMER_LITE
+  const GstIdStr * nameIDStr = gst_structure_get_name_id_str (structure);
+  if (!nameIDStr)
+    return FALSE;
+
+  return gst_id_str_is_equal_to_str (nameIDStr, name);
+#endif // GSTREAMER_LITE
 }
 
 /**
