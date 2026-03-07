@@ -526,7 +526,12 @@ param_enum_finalize (GParamSpec *pspec)
       espec->enum_class = NULL;
     }
 
+#ifndef GSTREAMER_LITE
   parent_class->finalize (pspec);
+#else // GSTREAMER_LITE
+  if (parent_class)
+    parent_class->finalize (pspec);
+#endif // GSTREAMER_LITE
 }
 
 static void
@@ -747,7 +752,12 @@ param_string_finalize (GParamSpec *pspec)
   sspec->cset_first = NULL;
   sspec->cset_nth = NULL;
 
+#ifndef GSTREAMER_LITE
   parent_class->finalize (pspec);
+#else // GSTREAMER_LITE
+  if (parent_class)
+    parent_class->finalize (pspec);
+#endif // GSTREAMER_LITE
 }
 
 static void
@@ -1365,11 +1375,21 @@ param_variant_values_cmp (GParamSpec   *pspec,
 
 /* --- type initialization --- */
 
+#ifndef GSTREAMER_LITE
 #define set_is_valid_vfunc(type,func) { \
   GParamSpecClass *class = g_type_class_ref (type); \
   class->value_is_valid = func; \
   g_type_class_unref (class); \
 }
+#else // GSTREAMER_LITE
+#define set_is_valid_vfunc(type,func) { \
+  GParamSpecClass *class = g_type_class_ref (type); \
+  if (class) { \
+    class->value_is_valid = func; \
+    g_type_class_unref (class); \
+  } \
+}
+#endif // GSTREAMER_LITE
 
 GType *g_param_spec_types = NULL;
 
