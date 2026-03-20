@@ -3753,6 +3753,11 @@ g_key_file_get_group_comment (GKeyFile     *key_file,
     }
 
   group_node = g_key_file_lookup_group_node (key_file, group_name);
+#ifdef GSTREAMER_LITE
+  if (group_node == NULL || group_node->next == NULL || group_node->next->data == NULL) {
+    return NULL;
+  }
+#endif // GSTREAMER_LITE
   group_node = group_node->next;
   group = (GKeyFileGroup *)group_node->data;
   return get_group_comment (key_file, group, error);

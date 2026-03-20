@@ -2098,6 +2098,14 @@ g_source_set_name_full (GSource    *source,
   g_return_if_fail (source != NULL);
   g_return_if_fail (g_atomic_int_get (&source->ref_count) > 0);
 
+#ifdef GSTREAMER_LITE
+  if (source == NULL)
+    return;
+
+  if (g_atomic_int_get (&source->ref_count) <= 0)
+    return;
+#endif // GSTREAMER_LITE
+
   context = source->context;
 
   if (context)
@@ -5192,6 +5200,10 @@ timeout_source_new (guint    interval,
                     gboolean one_shot)
 {
   GSource *source = g_source_new (&g_timeout_funcs, sizeof (GTimeoutSource));
+#ifdef GSTREAMER_LITE
+  if (source == NULL)
+    return NULL;
+#endif // GSTREAMER_LITE
   GTimeoutSource *timeout_source = (GTimeoutSource *)source;
 
   timeout_source->interval = interval;

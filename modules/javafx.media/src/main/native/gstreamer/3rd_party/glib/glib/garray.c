@@ -1225,6 +1225,10 @@ g_ptr_array_new_take (gpointer       *data,
   g_return_val_if_fail (len <= G_MAXUINT, NULL);
 
   array = ptr_array_new (0, element_free_func, FALSE);
+#ifdef GSTREAMER_LITE
+  if (array == NULL)
+    return NULL;
+#endif // GSTREAMER_LITE
   rarray = (GRealPtrArray *)array;
 
   rarray->pdata = g_steal_pointer (&data);
@@ -1280,6 +1284,10 @@ g_ptr_array_new_take_null_terminated (gpointer       *data,
   g_return_val_if_fail (len <= G_MAXUINT, NULL);
 
   array = g_ptr_array_new_take (g_steal_pointer (&data), len, element_free_func);
+#ifdef GSTREMAER_LITE
+  if (array == NULL)
+    return NULL;
+#endif // GSTREMAER_LITE
   ((GRealPtrArray *)array)->null_terminated = TRUE;
 
   return array;
@@ -1598,6 +1606,10 @@ g_array_copy (GArray *array)
   new_rarray =
     (GRealArray *) g_array_sized_new (rarray->zero_terminated, rarray->clear,
                                       rarray->elt_size, rarray->elt_capacity);
+#ifdef GSTREAMER_LITE
+  if (new_rarray == NULL)
+    return NULL;
+#endif // GSTREAMER_LITE
   new_rarray->len = rarray->len;
   if (rarray->len > 0)
     memcpy (new_rarray->data, rarray->data, rarray->len * rarray->elt_size);
