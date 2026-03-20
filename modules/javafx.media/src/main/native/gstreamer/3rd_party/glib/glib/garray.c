@@ -1284,10 +1284,10 @@ g_ptr_array_new_take_null_terminated (gpointer       *data,
   g_return_val_if_fail (len <= G_MAXUINT, NULL);
 
   array = g_ptr_array_new_take (g_steal_pointer (&data), len, element_free_func);
-#ifdef GSTREMAER_LITE
+#ifdef GSTREAMER_LITE
   if (array == NULL)
     return NULL;
-#endif // GSTREMAER_LITE
+#endif // GSTREAMER_LITE
   ((GRealPtrArray *)array)->null_terminated = TRUE;
 
   return array;
