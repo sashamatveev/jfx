@@ -260,6 +260,11 @@ canonicalize_key (gchar *key)
 {
   gchar *p;
 
+#ifdef GSTREAMER_LITE
+  if (key == NULL)
+    return;
+#endif // GSTREAMER_LITE
+
   for (p = key; *p != 0; p++)
     {
       gchar c = *p;

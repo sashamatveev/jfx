@@ -986,6 +986,16 @@ gvs_tuple_get_member_bounds (GVariantSerialised  value,
   gsize member_start, member_end;
 
   member_info = g_variant_type_info_member_info (value.type_info, index_);
+#ifdef GSTREAMER_LITE
+  if (member_info == NULL) {
+    if (out_member_start != NULL)
+      *out_member_start = 0;
+    if (out_member_end != NULL)
+      *out_member_end = 0;
+
+    return;
+  }
+#endif // GSTREAMER_LITE
 
   if (member_info->i + 1 &&
       offset_size * (member_info->i + 1) <= value.size)
@@ -1042,6 +1052,10 @@ gvs_tuple_get_child (GVariantSerialised value,
   gsize start, end, last_end;
 
   member_info = g_variant_type_info_member_info (value.type_info, index_);
+#ifdef GSTREAMER_LITE
+  if (member_info == NULL)
+    return child;
+#endif // GSTREAMER_LITE
   child.type_info = g_variant_type_info_ref (member_info->type_info);
   child.depth = value.depth + 1;
   offset_size = gvs_get_offset_size (value.size);
