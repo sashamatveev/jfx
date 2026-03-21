@@ -4872,9 +4872,17 @@ unpack_TILED (GstVideoFormat inner_format,
 
   /* we reuse these unpack functions */
   tile_finfo = gst_video_format_get_info (inner_format);
+#ifdef GSTREAMER_LITE
+  if (tile_finfo == NULL)
+    return;
+#endif // GSTREAMER_LITE
 
   /* get pstride of unpacked format */
   unpack_info = gst_video_format_get_info (info->unpack_format);
+#ifdef GSTREAMER_LITE
+  if (unpack_info == NULL)
+    return;
+#endif // GSTREAMER_LITE
   unpack_pstride = GST_VIDEO_FORMAT_INFO_PSTRIDE (unpack_info, 0);
 
   /* first x tile to convert */
@@ -4926,9 +4934,17 @@ pack_TILED (GstVideoFormat inner_format,
 
   /* we reuse these pack functions */
   tile_finfo = gst_video_format_get_info (inner_format);
+#ifdef GSTREAMER_LITE
+  if (tile_finfo == NULL)
+    return;
+#endif // GSTREAMER_LITE
 
   /* get pstride of packed format */
   pack_info = gst_video_format_get_info (info->unpack_format);
+#ifdef GSTREAMER_LITE
+  if (pack_info == NULL)
+    return;
+#endif // GSTREAMER_LITE
   pack_pstride = GST_VIDEO_FORMAT_INFO_PSTRIDE (pack_info, 0);
 
   /* Last tile to convert */

@@ -803,6 +803,10 @@ gst_buffer_pool_has_option (GstBufferPool * pool, const gchar * option)
   g_return_val_if_fail (option != NULL, FALSE);
 
   options = gst_buffer_pool_get_options (pool);
+#ifdef GSTREAMER_LITE
+  if (options == NULL)
+    return FALSE;
+#endif // GSTREAMER_LITE
 
   for (i = 0; options[i]; i++) {
     if (g_str_equal (options[i], option))
