@@ -3377,13 +3377,17 @@ static void* prepend_alloc(mstate m, char* newbase, char* oldbase,
 
 
 /* Add a segment to hold a new noncontiguous region */
+#ifdef GSTREAMER_LITE
+static int add_segment(mstate m, char* tbase, size_t tsize, flag_t mmapped) {
+#else // GSTREAMER_LITE
 static void add_segment(mstate m, char* tbase, size_t tsize, flag_t mmapped) {
+#endif // GSTREAMER_LITE
   /* Determine locations and sizes of segment, fenceposts, old top */
   char* old_top = (char*)m->top;
   msegmentptr oldsp = segment_holding(m, old_top);
 #ifdef GSTREAMER_LITE
   if (oldsp == NULL)
-    return;
+    return 0;
 #endif // GSTREAMER_LITE
   char* old_end = oldsp->base + oldsp->size;
   size_t ssize = pad_request(sizeof(struct malloc_segment));
@@ -3432,6 +3436,10 @@ static void add_segment(mstate m, char* tbase, size_t tsize, flag_t mmapped) {
   }
 
   check_top_chunk(m, m->top);
+
+#ifdef GSTREAMER_LITE
+  return 1;
+#endif // GSTREAMER_LITE
 }
 
 /* -------------------------- System allocation -------------------------- */
@@ -3608,7 +3616,14 @@ static void* sys_alloc(mstate m, size_t nb) {
           return prepend_alloc(m, tbase, oldbase, nb);
         }
         else
+#ifdef GSTREAMER_LITE
+          if (add_segment(m, tbase, tsize, mmap_flag) == 0) {
+            MALLOC_FAILURE_ACTION;
+            return 0;
+          }
+#else // GSTREAMER_LITE
           add_segment(m, tbase, tsize, mmap_flag);
+#endif // GSTREAMER_LITE
       }
     }
 
