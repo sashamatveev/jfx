@@ -42,7 +42,6 @@ C_SOURCES = \
         ghostutils.c \
         giochannel.c \
         giowin32.c \
-        gkeyfile.c \
         glib-init.c \
         glib-private.c \
         glist.c \
@@ -73,9 +72,6 @@ C_SOURCES = \
         gshell.c \
         gslice.c \
         gslist.c \
-        gspawn.c \
-        gspawn-win32-helper.c \
-        gspawn-win32.c \
         gstdio.c \
         gstrfuncs.c \
         gstring.c \

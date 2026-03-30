@@ -1334,7 +1334,6 @@ g_crash_handler_win32_deinit (void)
 
   WinVEH_handle = NULL;
 }
-#endif // GSTREAMER_LITE
 
 /**
  * g_win32_find_helper_executable_path:
@@ -1454,6 +1453,7 @@ g_win32_find_helper_executable_path (const gchar *executable_name, void *dll_han
 
   return executable_path;
 }
+#endif // GSTREAMER_LITE
 
 /*
  * g_win32_handle_is_socket:

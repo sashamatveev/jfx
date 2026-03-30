@@ -113,9 +113,11 @@ GQuark     g_file_error_quark      (void);
 GLIB_AVAILABLE_IN_ALL
 GFileError g_file_error_from_errno (gint err_no);
 
+#ifndef GSTREAMER_LITE
 GLIB_AVAILABLE_IN_ALL
 gboolean g_file_test         (const gchar  *filename,
                               GFileTest     test);
+#endif // GSTREAMER_LITE
 GLIB_AVAILABLE_IN_ALL
 gboolean g_file_get_contents (const gchar  *filename,
                               gchar       **contents,
@@ -126,6 +128,7 @@ gboolean g_file_set_contents (const gchar *filename,
                               const gchar *contents,
                               gssize         length,
                               GError       **error);
+#ifndef GSTREAMER_LITE
 G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 GLIB_AVAILABLE_IN_2_66
 gboolean g_file_set_contents_full (const gchar            *filename,
@@ -135,6 +138,7 @@ gboolean g_file_set_contents_full (const gchar            *filename,
                                    int                     mode,
                                    GError                **error);
 G_GNUC_END_IGNORE_DEPRECATIONS
+#endif // GSTREAMER_LITE
 GLIB_AVAILABLE_IN_ALL
 gchar   *g_file_read_link    (const gchar  *filename,
                               GError      **error);

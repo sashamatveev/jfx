@@ -62,7 +62,9 @@ glib__private__ (void)
     g_win32_lstat_utf8,
     g_win32_readlink_utf8,
     g_win32_fstat,
+#ifndef GSTREAMER_LITE
     g_win32_find_helper_executable_path,
+#endif // GSTREAMER_LITE
     g_win32_reopen_noninherited,
     g_win32_handle_is_socket,
 #endif
@@ -70,7 +72,9 @@ glib__private__ (void)
     g_win32_push_empty_invalid_parameter_handler,
     g_win32_pop_invalid_parameter_handler,
 
+#ifndef GSTREAMER_LITE
     g_find_program_for_path,
+#endif // GSTREAMER_LITE
 
     g_uri_get_default_scheme_port,
 

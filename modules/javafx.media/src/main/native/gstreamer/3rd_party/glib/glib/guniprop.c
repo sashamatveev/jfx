@@ -31,7 +31,9 @@
 #include "gtestutils.h"
 #include "gtypes.h"
 #include "gunicode.h"
+#ifndef GSTREAMER_LITE
 #include "gunichartables.h"
+#endif // GSTREAMER_LITE
 #include "gmirroringtable.h"
 #include "gscripttable.h"
 #include "gunicodeprivate.h"
@@ -39,6 +41,7 @@
 #include "gwin32.h"
 #endif
 
+#ifndef GSTREAMER_LITE
 #define G_UNICHAR_FULLWIDTH_A 0xff21
 #define G_UNICHAR_FULLWIDTH_I 0xff29
 #define G_UNICHAR_FULLWIDTH_J 0xff2a
@@ -69,7 +72,6 @@
    : (((Char) >= 0xe0000 && (Char) <= G_UNICODE_LAST_CHAR) \
       ? TTYPE_PART2 (((Char) - 0xe0000) >> 8, (Char) & 0xff) \
       : G_UNICODE_UNASSIGNED))
-
 
 #define IS(Type, Class) (((guint)1 << (Type)) & (Class))
 #define OR(Type, Rest)  (((guint)1 << (Type)) | (Rest))
@@ -1622,3 +1624,4 @@ g_unicode_script_from_iso15924 (guint32 iso15924)
 
   return G_UNICODE_SCRIPT_UNKNOWN;
 }
+#endif // GSTREAMER_LITE

@@ -227,9 +227,11 @@ typedef struct _GWin32InvalidParameterHandler GWin32InvalidParameterHandler;
 void g_win32_push_empty_invalid_parameter_handler (GWin32InvalidParameterHandler *items);
 void g_win32_pop_invalid_parameter_handler (GWin32InvalidParameterHandler *items);
 
+#ifndef GSTREAMER_LITE
 char *g_find_program_for_path (const char *program,
                                const char *path,
                                const char *working_dir);
+#endif // GSTREAMER_LITE
 
 int g_uri_get_default_scheme_port (const char *scheme);
 
@@ -274,10 +276,11 @@ typedef struct {
 
   int                   (* g_win32_fstat)               (int                 fd,
                                                          GWin32PrivateStat  *buf);
-
+#ifndef GSTREAMER_LITE
   /* See gwin32.c */
   gchar *(*g_win32_find_helper_executable_path) (const gchar *process_name,
                                                  void *dll_handle);
+#endif // GSTREAMER_LITE
 
   int                   (* g_win32_reopen_noninherited) (int      fd,
                                                          int      mode,
@@ -292,10 +295,12 @@ typedef struct {
 
   void (* g_win32_pop_invalid_parameter_handler)        (GWin32InvalidParameterHandler *items);
 
+#ifndef GSTREAMER_LITE
   /* See gutils.c */
   char *(* g_find_program_for_path) (const char *program,
                                      const char *path,
                                      const char *working_dir);
+#endif // GSTREAMER_LITE
 
   /* See guri.c */
   int (* g_uri_get_default_scheme_port) (const char *scheme);

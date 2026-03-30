@@ -343,9 +343,11 @@ int atexit (void (*)(void));
 #endif
 
 
+#ifndef GSTREMAER_LITE
 /* Look for an executable in PATH, following execvp() rules */
 GLIB_AVAILABLE_IN_ALL
 gchar*  g_find_program_in_path  (const gchar *program);
+#endif // GSTREMAER_LITE
 
 /* Bit tests
  *

@@ -178,6 +178,7 @@
  *
  * Since: 2.8
  */
+#ifndef GSTREAMER_LITE
 int
 g_mkdir_with_parents (const gchar *pathname,
           int          mode)
@@ -472,6 +473,7 @@ g_file_test (const gchar *filename,
   return FALSE;
 #endif
 }
+#endif // GSTREAMER_LITE
 
 G_DEFINE_QUARK (g-file-error-quark, g_file_error)
 
@@ -1257,6 +1259,7 @@ write_to_file (const gchar  *contents,
  *
  * Since: 2.8
  */
+#ifndef GSTREAMER_LITE
 gboolean
 g_file_set_contents (const gchar  *filename,
                      const gchar  *contents,
@@ -1268,6 +1271,7 @@ g_file_set_contents (const gchar  *filename,
                                    G_FILE_SET_CONTENTS_ONLY_EXISTING,
                                    0666, error);
 }
+#endif // GSTREAMER_LITE
 
 /**
  * g_file_set_contents_full:
@@ -1338,6 +1342,7 @@ g_file_set_contents (const gchar  *filename,
  *
  * Since: 2.66
  */
+#ifndef GSTREAMER_LITE
 gboolean
 g_file_set_contents_full (const gchar            *filename,
                           const gchar            *contents,
@@ -1512,6 +1517,7 @@ consistent_out:
 
   return TRUE;
 }
+#endif // GSTREAMER_LITE
 
 /*
  * get_tmp_file based on the mkstemp implementation from the GNU C library.

@@ -187,6 +187,7 @@ my_strchrnul (const gchar *str,
   return p;
 }
 
+#ifndef GSTREAMER_LITE
 #ifdef G_OS_WIN32
 
 static gchar *inner_find_program_in_path (const gchar *program);
@@ -263,6 +264,7 @@ g_find_program_in_path (const gchar *program)
  * Returns: (type filename) (transfer full) (nullable): a newly-allocated
  *   string with the absolute path, or %NULL
  **/
+
 #ifdef G_OS_WIN32
 static gchar *
 inner_find_program_in_path (const gchar *program)
@@ -525,6 +527,7 @@ g_find_program_for_path (const char *program,
 
   return NULL;
 }
+#endif // GSTREAMER_LITE
 
 /* The functions below are defined this way for compatibility reasons.
  * See the note in gutils.h.
@@ -837,6 +840,7 @@ g_get_real_name (void)
 /* Protected by @g_utils_global_lock. */
 static gchar *g_home_dir = NULL;  /* (owned) (nullable before initialised) */
 
+#ifndef GSTREAMER_LITE
 static gchar *
 g_build_home_dir (void)
 {
@@ -2506,6 +2510,7 @@ g_get_user_special_dir (GUserDirectory directory)
 
   return user_special_dir;
 }
+#endif // GSTREAMER_LITE
 
 #ifdef G_OS_WIN32
 

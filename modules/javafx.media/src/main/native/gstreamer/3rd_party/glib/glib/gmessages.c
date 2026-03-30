@@ -410,6 +410,7 @@ _g_log_abort (gboolean breakpoint)
 {
   gboolean debugger_present;
 
+#ifndef GSTREAMER_LITE
   if (g_test_subprocess ())
     {
       /* If this is a test case subprocess then it probably caused
@@ -419,6 +420,7 @@ _g_log_abort (gboolean breakpoint)
        */
       _exit (1);
     }
+#endif // GSTREAMER_LITE
 
 #ifdef G_OS_WIN32
   debugger_present = IsDebuggerPresent ();
@@ -1117,10 +1119,12 @@ mklevel_prefix (gchar          level_prefix[STRING_BUFFER_SIZE],
   if (log_level & ALERT_LEVELS)
     strcat (level_prefix, " **");
 
+#ifndef GSTREAMER_LITE
 #ifdef G_OS_WIN32
   if ((log_level & G_LOG_FLAG_FATAL) != 0 && !g_test_initialized ())
     win32_keep_fatal_message = TRUE;
 #endif
+#endif // GSTREAMER_LITE
   return log_level_to_file (log_level);
 }
 
@@ -2939,6 +2943,7 @@ handled:
     {
       /* MessageBox is allowed on UWP apps only when building against
        * the debug CRT, which will set -D_DEBUG */
+#ifndef GSTREAMER_LITE
 #if defined(G_OS_WIN32) && (defined(_DEBUG) || !defined(G_WINAPI_ONLY_APP))
       if (!g_test_initialized ())
         {
@@ -2951,6 +2956,7 @@ handled:
           g_free (wide_msg);
         }
 #endif /* !G_OS_WIN32 */
+#endif // GSTREAMER_LITE
 
       _g_log_abort (!(log_level & G_LOG_FLAG_RECURSION));
     }
@@ -3201,6 +3207,7 @@ g_test_expect_message (const gchar    *log_domain,
   expected_messages = g_slist_append (expected_messages, expected);
 }
 
+#ifndef GSTREAMER_LITE
 void
 g_test_assert_expected_messages_internal (const char     *domain,
                                           const char     *file,
@@ -3223,6 +3230,7 @@ g_test_assert_expected_messages_internal (const char     *domain,
       g_free (message);
     }
 }
+#endif // GSTREAMER_LITE
 
 /**
  * g_test_assert_expected_messages:

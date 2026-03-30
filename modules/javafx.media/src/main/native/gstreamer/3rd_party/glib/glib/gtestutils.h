@@ -35,12 +35,14 @@
 
 G_BEGIN_DECLS
 
+#ifndef GSTREAMER_LITE
 typedef struct GTestCase  GTestCase;
 typedef struct GTestSuite GTestSuite;
 typedef void (*GTestFunc)        (void);
 typedef void (*GTestDataFunc)    (gconstpointer user_data);
 typedef void (*GTestFixtureFunc) (gpointer      fixture,
                                   gconstpointer user_data);
+#endif // GSTREAMER_LITE
 
 /* assertion API */
 #define g_assert_cmpstr(s1, cmp, s2)    G_STMT_START { \
@@ -282,7 +284,7 @@ typedef void (*GTestFixtureFunc) (gpointer      fixture,
 GLIB_AVAILABLE_IN_ALL
 int     g_strcmp0                       (const char     *str1,
                                          const char     *str2);
-
+#ifndef GSTREAMER_LITE
 /* report performance results */
 GLIB_AVAILABLE_IN_ALL
 void    g_test_minimized_result         (double          minimized_quantity,
@@ -744,6 +746,8 @@ GTestLogMsg*    g_test_log_buffer_pop   (GTestLogBuffer *tbuffer);
 GLIB_AVAILABLE_IN_ALL
 void            g_test_log_msg_free     (GTestLogMsg    *tmsg);
 
+#endif // GSTREAMER_LITE
+
 /**
  * GTestLogFatalFunc:
  * @log_domain: the log domain of the message
@@ -761,6 +765,7 @@ typedef gboolean        (*GTestLogFatalFunc)    (const gchar    *log_domain,
                                                  GLogLevelFlags  log_level,
                                                  const gchar    *message,
                                                  gpointer        user_data);
+#ifndef GSTREAMER_LITE
 GLIB_AVAILABLE_IN_ALL
 void
 g_test_log_set_fatal_handler            (GTestLogFatalFunc log_func,
@@ -796,6 +801,8 @@ const gchar *g_test_get_filename                 (GTestFileType   file_type,
                                                   ...) G_GNUC_NULL_TERMINATED;
 
 #define g_test_assert_expected_messages() g_test_assert_expected_messages_internal (G_LOG_DOMAIN, __FILE__, __LINE__, G_STRFUNC)
+
+#endif // GSTREAMER_LITE
 
 G_END_DECLS
 

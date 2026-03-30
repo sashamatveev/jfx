@@ -87,7 +87,6 @@ C_SOURCES = glib/garcbox.c \
             glib/ghook.c \
             glib/giochannel.c \
             glib/giounix.c \
-            glib/gkeyfile.c \
             glib/glib-init.c \
             glib/glib-private.c \
             glib/glist.c \
@@ -111,8 +110,6 @@ C_SOURCES = glib/garcbox.c \
             glib/grefcount.c \
             glib/gscanner.c \
             glib/gsequence.c \
-            glib/gspawn.c \
-            glib/gspawn-posix.c \
             glib/gshell.c \
             glib/gslice.c \
             glib/gslist.c \

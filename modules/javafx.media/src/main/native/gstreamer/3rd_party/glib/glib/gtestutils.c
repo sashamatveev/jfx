@@ -61,9 +61,13 @@
 #include "gstrfuncs.h"
 #include "gtimer.h"
 #include "gslice.h"
+#ifndef GSTREAMER_LITE
 #include "gspawn.h"
+#endif // GSTREAMER_LITE
 #include "glib-private.h"
 #include "gutilsprivate.h"
+
+#ifndef GSTREAMER_LITE
 
 #define TAP_VERSION G_STRINGIFY (14)
 #define TAP_SUBTEST_PREFIX "    "  /* a 4-space indented line */
@@ -3495,6 +3499,8 @@ g_assertion_message_expr (const char     *domain,
     g_abort ();
 }
 
+#endif // GSTREAMER_LITE
+
 void
 g_assertion_message_cmpint (const char     *domain,
                             const char     *file,
@@ -3561,6 +3567,8 @@ g_assertion_message_cmpnum (const char     *domain,
   g_assertion_message (domain, file, line, func, s);
   g_free (s);
 }
+
+#ifndef GSTREAMER_LITE
 
 void
 g_assertion_message_cmpstr (const char     *domain,
@@ -3642,6 +3650,7 @@ g_assertion_message_error (const char     *domain,
   g_assertion_message (domain, file, line, func, gstring->str);
   g_string_free (gstring, TRUE);
 }
+#endif // GSTREAMER_LITE
 
 /**
  * g_strcmp0:
@@ -3669,6 +3678,7 @@ g_strcmp0 (const char     *str1,
   return strcmp (str1, str2);
 }
 
+#ifndef GSTREAMER_LITE
 static void
 test_trap_clear (void)
 {
@@ -4798,3 +4808,4 @@ g_test_get_path (void)
 {
   return test_run_name;
 }
+#endif // GSTREAMER_LITE

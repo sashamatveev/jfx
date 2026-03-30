@@ -299,6 +299,7 @@ contains_non_ascii (const gchar *str,
   return FALSE;
 }
 
+#ifndef GSTREAMER_LITE
 /* RFC 3454, Appendix C. ish. */
 static inline gboolean
 idna_is_prohibited (gunichar ch)
@@ -417,6 +418,7 @@ nameprep (const gchar *hostname,
  done:
   return name;
 }
+#endif // GSTREAMER_LITE
 
 /* RFC 3490, section 3.1 says '.', 0x3002, 0xFF0E, and 0xFF61 count as
  * label-separating dots. @str must be '\0'-terminated.
@@ -477,6 +479,7 @@ strlen_greater_than (const gchar *str,
   return FALSE;
 }
 
+#ifndef GSTREAMER_LITE
 /**
  * g_hostname_to_ascii:
  * @hostname: a valid UTF-8 or ASCII hostname
@@ -572,6 +575,7 @@ g_hostname_to_ascii (const gchar *hostname)
   g_string_free (out, TRUE);
   return NULL;
 }
+#endif // GSTREAMER_LITE
 
 /**
  * g_hostname_is_non_ascii:
@@ -680,6 +684,7 @@ punycode_decode (const gchar *input,
   return FALSE;
 }
 
+#ifndef GSTREAMER_LITE
 /**
  * g_hostname_to_unicode:
  * @hostname: a valid UTF-8 or ASCII hostname
@@ -750,6 +755,7 @@ g_hostname_to_unicode (const gchar *hostname)
 
   return g_string_free (out, FALSE);
 }
+#endif // GSTREAMER_LITE
 
 /**
  * g_hostname_is_ascii_encoded:

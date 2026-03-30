@@ -504,6 +504,7 @@ zone_identifier_illumos (void)
 #endif /* defined(__sun) && defined(__SRVR) */
 
 #ifdef G_OS_UNIX
+
 /*
  * returns the path to the top of the Olson zoneinfo timezone hierarchy.
  */
