@@ -1343,7 +1343,7 @@ gvs_tuple_is_normal (GVariantSerialised value)
 
   return TRUE;
 }
-#endif // GSTRAEMER_LITE
+#endif // GSTREAMER_LITE
 
 /* Variants {{{2
  *
