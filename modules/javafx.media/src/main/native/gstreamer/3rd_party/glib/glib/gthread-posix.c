@@ -132,10 +132,6 @@ g_mutex_impl_free (pthread_mutex_t *mutex)
 static inline pthread_mutex_t *
 g_mutex_get_impl (GMutex *mutex)
 {
-#ifdef GSTREAMER_LITE
-  if (mutex == NULL)
-    return NULL;
-#endif // GSTREAMER_LITE
   pthread_mutex_t *impl = g_atomic_pointer_get (&mutex->p);
 
   if G_UNLIKELY (impl == NULL)

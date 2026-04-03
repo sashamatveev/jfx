@@ -949,6 +949,7 @@ gvs_variable_sized_array_is_normal (GVariantSerialised value)
   return TRUE;
 }
 
+#ifndef GSTREAMER_LITE
 /* Tuples {{{2
  *
  * Since tuples can contain a mix of variable- and fixed-sized items,
@@ -986,16 +987,6 @@ gvs_tuple_get_member_bounds (GVariantSerialised  value,
   gsize member_start, member_end;
 
   member_info = g_variant_type_info_member_info (value.type_info, index_);
-#ifdef GSTREAMER_LITE
-  if (member_info == NULL) {
-    if (out_member_start != NULL)
-      *out_member_start = 0;
-    if (out_member_end != NULL)
-      *out_member_end = 0;
-
-    return;
-  }
-#endif // GSTREAMER_LITE
 
   if (member_info->i + 1 &&
       offset_size * (member_info->i + 1) <= value.size)
@@ -1052,10 +1043,6 @@ gvs_tuple_get_child (GVariantSerialised value,
   gsize start, end, last_end;
 
   member_info = g_variant_type_info_member_info (value.type_info, index_);
-#ifdef GSTREAMER_LITE
-  if (member_info == NULL)
-    return child;
-#endif // GSTREAMER_LITE
   child.type_info = g_variant_type_info_ref (member_info->type_info);
   child.depth = value.depth + 1;
   offset_size = gvs_get_offset_size (value.size);
@@ -1356,6 +1343,7 @@ gvs_tuple_is_normal (GVariantSerialised value)
 
   return TRUE;
 }
+#endif // GSTRAEMER_LITE
 
 /* Variants {{{2
  *
@@ -1518,6 +1506,7 @@ gvs_variant_is_normal (GVariantSerialised value)
       }                                                 \
   }
 
+#ifndef GSTREAMER_LITE
 #define DISPATCH_CASES(type_info, before, after) \
   switch (g_variant_type_info_get_type_char (type_info))        \
     {                                                           \
@@ -1538,6 +1527,22 @@ gvs_variant_is_normal (GVariantSerialised value)
           before ## variant ## after                            \
         }                                                       \
     }
+#else // GSTREAMER_LITE
+#define DISPATCH_CASES(type_info, before, after) \
+  switch (g_variant_type_info_get_type_char (type_info))        \
+    {                                                           \
+      case G_VARIANT_TYPE_INFO_CHAR_MAYBE:                      \
+        DISPATCH_FIXED (type_info, before, _maybe ## after)     \
+                                                                \
+      case G_VARIANT_TYPE_INFO_CHAR_ARRAY:                      \
+        DISPATCH_FIXED (type_info, before, _array ## after)     \
+                                                                \
+      case G_VARIANT_TYPE_INFO_CHAR_VARIANT:                    \
+        {                                                       \
+          before ## variant ## after                            \
+        }                                                       \
+    }
+#endif // GSTREAMER_LITE
 
 /* Serializer entry points {{{2
  *
