@@ -123,7 +123,6 @@ public class FXMediaPlayer extends Application implements FXMediaPlayerInterface
 
     @Override
     public synchronized void onSourceChanged(String source) {
-
         if (source == null) {
             media = null;
 

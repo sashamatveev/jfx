@@ -35,7 +35,7 @@ import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToolBar;
 import javafx.scene.media.MediaPlayer;
 
-public class MediaPlayerToolBar {
+public class MediaPlayerButtonBar {
 
     private FXMediaPlayerInterface FXMediaPlayer = null;
     private ToolBar toolBar = null;
@@ -43,10 +43,12 @@ public class MediaPlayerToolBar {
     private Button buttonPause = null;
     private Button buttonStop = null;
     private ToggleButton buttonMute = null;
+    private ToggleButton buttonSmooth = null;
+    private ToggleButton buttonPreserveRatio = null;
     private ToggleButton buttonLoop = null;
     private InvalidationListener statusPropertyListener = null;
 
-    public MediaPlayerToolBar(FXMediaPlayerInterface FXMediaPlayer) {
+    public MediaPlayerButtonBar(FXMediaPlayerInterface FXMediaPlayer) {
         this.FXMediaPlayer = FXMediaPlayer;
     }
 
@@ -54,30 +56,55 @@ public class MediaPlayerToolBar {
         if (toolBar == null) {
             toolBar = new ToolBar();
 
+            // Play
             buttonPlay = new Button("Play");
             buttonPlay.setOnAction((ActionEvent event) -> {
                 onButtonPlay();
             });
             toolBar.getItems().add(buttonPlay);
 
+            // Pause
             buttonPause = new Button("Pause");
             buttonPause.setOnAction((ActionEvent event) -> {
                 onButtonPause();
             });
             toolBar.getItems().add(buttonPause);
 
+            // Stop
             buttonStop = new Button("Stop");
             buttonStop.setOnAction((ActionEvent event) -> {
                 onButtonStop();
             });
             toolBar.getItems().add(buttonStop);
 
+            // Mute
             buttonMute = new ToggleButton("Mute");
             buttonMute.setOnAction((ActionEvent event) -> {
                 onButtonMute();
             });
             toolBar.getItems().add(buttonMute);
 
+            // Smooth
+            buttonSmooth = new ToggleButton("Smooth");
+            buttonSmooth.setOnAction((ActionEvent event) -> {
+                onButtonSmooth();
+            });
+            if (FXMediaPlayer.getMediaView().isSmooth()) {
+                buttonSmooth.setSelected(true);
+            }
+            toolBar.getItems().add(buttonSmooth);
+
+            // Ratio
+            buttonPreserveRatio = new ToggleButton("Ratio");
+            buttonPreserveRatio.setOnAction((ActionEvent event) -> {
+                onButtonPreserveRatio();
+            });
+            if (FXMediaPlayer.getMediaView().isPreserveRatio()) {
+                buttonPreserveRatio.setSelected(true);
+            }
+            toolBar.getItems().add(buttonPreserveRatio);
+
+            // Loop
             buttonLoop = new ToggleButton("Loop");
             buttonLoop.setOnAction((ActionEvent event) -> {
                 onButtonLoop();
@@ -94,6 +121,8 @@ public class MediaPlayerToolBar {
         removeListeners(oldMediaPlayer);
         addListeners();
         onButtonMute();
+        onButtonSmooth();
+        onButtonPreserveRatio();
         onButtonLoop();
     }
 
@@ -157,6 +186,18 @@ public class MediaPlayerToolBar {
     private void onButtonMute() {
         if (FXMediaPlayer.getMediaPlayer() != null) {
             FXMediaPlayer.getMediaPlayer().setMute(buttonMute.isSelected());
+        }
+    }
+
+    private void onButtonSmooth() {
+        if (FXMediaPlayer.getMediaView() != null) {
+            FXMediaPlayer.getMediaView().setSmooth(buttonSmooth.isSelected());
+        }
+    }
+
+    private void onButtonPreserveRatio() {
+        if (FXMediaPlayer.getMediaView() != null) {
+            FXMediaPlayer.getMediaView().setPreserveRatio(buttonPreserveRatio.isSelected());
         }
     }
 

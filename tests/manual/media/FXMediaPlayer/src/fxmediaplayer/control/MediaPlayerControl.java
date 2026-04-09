@@ -33,7 +33,7 @@ import javafx.scene.media.MediaPlayer;
 public class MediaPlayerControl implements FXMediaPlayerControlInterface {
 
     private FXMediaPlayerInterface FXMediaPlayer = null;
-    private MediaPlayerToolBar toolBar = null;
+    private MediaPlayerButtonBar toolBar = null;
     private MediaPlayerTabControl tabControl = null;
     private VBox control = null;
 
@@ -45,7 +45,7 @@ public class MediaPlayerControl implements FXMediaPlayerControlInterface {
         if (control == null) {
             control = new VBox();
 
-            toolBar = new MediaPlayerToolBar(FXMediaPlayer);
+            toolBar = new MediaPlayerButtonBar(FXMediaPlayer);
             tabControl = new MediaPlayerTabControl(FXMediaPlayer);
 
             control.getChildren().addAll(toolBar.getToolBar(),

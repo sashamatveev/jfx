@@ -31,17 +31,18 @@ import javafx.event.ActionEvent;
 import javafx.scene.control.Button;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToolBar;
+import javafx.scene.layout.VBox;
 
 public class MediaPlayerMenu {
 
     private FXMediaPlayerInterface FXMediaPlayer = null;
+    private VBox menu = null;
     private ToolBar toolBar = null;
+    private ToolBar toolBarStates = null;
     private Button buttonOpen = null;
     private Button buttonDispose = null;
     private ToggleButton buttonAutoPlay = null;
     private Button buttonFullScreen = null;
-    private ToggleButton buttonSmooth = null;
-    private ToggleButton buttonPreserveRatio = null;
     private ToggleButton buttonScrubbing = null;
     private Button buttonTest = null;
     private MediaPlayerMenuOpenDialog openDialog = null;
@@ -51,8 +52,10 @@ public class MediaPlayerMenu {
         this.FXMediaPlayer = FXMediaPlayer;
     }
 
-    public ToolBar getMenu() {
-        if (toolBar == null) {
+    public VBox getMenu() {
+        if (menu == null) {
+            menu = new VBox();
+
             toolBar = new ToolBar();
 
             buttonOpen = new Button("Open");
@@ -79,24 +82,6 @@ public class MediaPlayerMenu {
             });
             toolBar.getItems().add(buttonFullScreen);
 
-            buttonSmooth = new ToggleButton("Smooth");
-            buttonSmooth.setOnAction((ActionEvent event) -> {
-                onButtonSmooth();
-            });
-            if (FXMediaPlayer.getMediaView().isSmooth()) {
-                buttonSmooth.setSelected(true);
-            }
-            toolBar.getItems().add(buttonSmooth);
-
-            buttonPreserveRatio = new ToggleButton("Ratio");
-            buttonPreserveRatio.setOnAction((ActionEvent event) -> {
-                onButtonPreserveRatio();
-            });
-            if (FXMediaPlayer.getMediaView().isPreserveRatio()) {
-                buttonPreserveRatio.setSelected(true);
-            }
-            toolBar.getItems().add(buttonPreserveRatio);
-
             buttonScrubbing = new ToggleButton("Scrubbing");
             buttonScrubbing.setOnAction((ActionEvent event) -> {
                 onButtonScrubbing();
@@ -108,9 +93,15 @@ public class MediaPlayerMenu {
                 onButtonTest();
             });
             toolBar.getItems().add(buttonTest);
+
+            menu.getChildren().add(toolBar);
+
+            toolBarStates = new ToolBar();
+
+            menu.getChildren().add(toolBarStates);
         }
 
-        return toolBar;
+        return menu;
     }
 
     private void onButtonOpen() {
@@ -131,15 +122,6 @@ public class MediaPlayerMenu {
 
     private void onButtonFullScreen() {
         FXMediaPlayer.setFullScreen(true);
-    }
-
-    private void onButtonSmooth() {
-        FXMediaPlayer.getMediaView().setSmooth(buttonSmooth.isSelected());
-    }
-
-    private void onButtonPreserveRatio() {
-        FXMediaPlayer.getMediaView()
-                .setPreserveRatio(buttonPreserveRatio.isSelected());
     }
 
     private void onButtonScrubbing() {

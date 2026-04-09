@@ -54,15 +54,6 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
     private static final float OFF_OPACITY = 0.1f;
     private FXMediaPlayerInterface FXMediaPlayer = null;
     private VBox states = null;
-    private Label labelInfo = null;
-    private final String labelInfoText =
-            "Time: %s\nVolume: %.2f\nBalance: %.2f\nRate: %.2f\nPlay count: %d";
-    private boolean infoOn = false;
-    private Duration time = Duration.ZERO;
-    private double volume = 1.0;
-    private double balance = 0.0;
-    private double rate = 1.0;
-    private int count = 0;
     private Label labelReady = null;
     private Label labelPlaying = null;
     private Label labelPaused = null;
@@ -74,13 +65,6 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
     private Label labelRepeat = null;
     private Label labelError = null;
     private Label labelCurrentState = null;
-    private ProgressIndicator bufferIndicator = null;
-    private double mediaDuration = 0.0;
-    private ChangeListener<Duration> currentTimePropertyListener = null;
-    private InvalidationListener volumePropertyListener = null;
-    private InvalidationListener balancePropertyListener = null;
-    private InvalidationListener ratePropertyListener = null;
-    private InvalidationListener currentCountPropertyListener = null;
     private InvalidationListener statusPropertyListener = null;
     private Runnable onReadyRunnable = null;
     private Runnable onPlayingRunnable = null;
@@ -91,7 +75,6 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
     private Runnable onEndOfMediaRunnable = null;
     private Runnable onRepeatRunnable = null;
     private Runnable onErrorRunnable = null;
-    private InvalidationListener bufferProgressTimeProperty = null;
 
     public MediaPlayerStates(FXMediaPlayerInterface FXMediaPlayer) {
         this.FXMediaPlayer = FXMediaPlayer;
@@ -105,9 +88,6 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
             states.setMaxWidth(WIDTH);
             states.setPrefWidth(WIDTH);
             states.setAlignment(Pos.TOP_CENTER);
-
-            labelInfo = createInfoLabel(getInfoText(), Color.LIGHTGRAY, 80);
-            states.getChildren().add(labelInfo);
 
             labelReady = createStateLabel(MediaPlayer.Status.READY.toString(),
                     Color.LIGHTGRAY);
@@ -140,11 +120,6 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
                     Color.RED);
             states.getChildren().add(labelError);
 
-            bufferIndicator = new ProgressIndicator();
-            bufferIndicator.setPrefSize(50, 50);
-            bufferIndicator.setProgress(0.0);
-            states.getChildren().add(bufferIndicator);
-
             createListeners();
             addListeners();
         }
@@ -162,27 +137,6 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
     }
 
     private void createListeners() {
-        currentTimePropertyListener =
-                (ObservableValue<? extends Duration> ov, Duration o, Duration n) -> {
-            onCurrentTime(n);
-        };
-
-        volumePropertyListener = (Observable o) -> {
-            onVolume(o);
-        };
-
-        balancePropertyListener = (Observable o) -> {
-            onBalance(o);
-        };
-
-        ratePropertyListener = (Observable o) -> {
-            onRate(o);
-        };
-
-        currentCountPropertyListener = (Observable o) -> {
-            onCurrentCount(o);
-        };
-
         statusPropertyListener = (Observable o) -> {
             onStatus(o);
         };
@@ -222,24 +176,10 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
         onErrorRunnable = () -> {
             onError();
         };
-
-        bufferProgressTimeProperty = (Observable o) -> {
-            onBufferProgressTime(o);
-        };
     }
 
     private void addListeners() {
         if (FXMediaPlayer.getMediaPlayer() != null) {
-            FXMediaPlayer.getMediaPlayer()
-                    .currentTimeProperty().addListener(currentTimePropertyListener);
-            FXMediaPlayer.getMediaPlayer()
-                    .volumeProperty().addListener(volumePropertyListener);
-            FXMediaPlayer.getMediaPlayer()
-                    .balanceProperty().addListener(balancePropertyListener);
-            FXMediaPlayer.getMediaPlayer()
-                    .rateProperty().addListener(ratePropertyListener);
-            FXMediaPlayer.getMediaPlayer()
-                    .currentCountProperty().addListener(currentCountPropertyListener);
             FXMediaPlayer.getMediaPlayer()
                     .statusProperty().addListener(statusPropertyListener);
             FXMediaPlayer.getMediaPlayer()
@@ -260,26 +200,12 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
                     .setOnRepeat(onRepeatRunnable);
             FXMediaPlayer.getMediaPlayer()
                     .setOnError(onErrorRunnable);
-            FXMediaPlayer.getMediaPlayer()
-                    .bufferProgressTimeProperty().addListener(bufferProgressTimeProperty);
         }
     }
 
     private void removeListeners(MediaPlayer mediaPlayer) {
-        mediaPlayer.currentTimeProperty()
-                .removeListener(currentTimePropertyListener);
-        mediaPlayer.volumeProperty()
-                .removeListener(volumePropertyListener);
-        mediaPlayer.balanceProperty()
-                .removeListener(balancePropertyListener);
-        mediaPlayer.rateProperty()
-                .removeListener(ratePropertyListener);
-        mediaPlayer.currentCountProperty()
-                .removeListener(currentCountPropertyListener);
         mediaPlayer.statusProperty()
                 .removeListener(statusPropertyListener);
-        mediaPlayer.bufferProgressTimeProperty()
-                .removeListener(bufferProgressTimeProperty);
         mediaPlayer.setOnReady(null);
         mediaPlayer.setOnPlaying(null);
         mediaPlayer.setOnPaused(null);
@@ -289,41 +215,6 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
         mediaPlayer.setOnEndOfMedia(null);
         mediaPlayer.setOnRepeat(null);
         mediaPlayer.setOnError(null);
-    }
-
-    private void onCurrentTime(Duration newValue) {
-        time = newValue;
-        Platform.runLater(() -> {
-            labelInfo.setText(getInfoText());
-        });
-    }
-
-    private void onVolume(Observable o) {
-        DoubleProperty prop = (DoubleProperty) o;
-        volume = prop.getValue();
-        labelInfo.setText(getInfoText());
-    }
-
-    private void onBalance(Observable o) {
-        DoubleProperty prop = (DoubleProperty) o;
-        balance = prop.getValue();
-        labelInfo.setText(getInfoText());
-    }
-
-    private void onRate(Observable o) {
-        DoubleProperty prop = (DoubleProperty) o;
-        rate = prop.getValue();
-        labelInfo.setText(getInfoText());
-    }
-
-    private void onCurrentCount(Observable o) {
-        try {
-            ReadOnlyIntegerProperty prop = (ReadOnlyIntegerProperty) o;
-            count = prop.getValue();
-            labelInfo.setText(getInfoText());
-        } catch (Exception e) {
-            System.err.println(e.toString());
-        }
     }
 
     @SuppressWarnings("unchecked")
@@ -342,7 +233,6 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
 
     private void onReady() {
         switchState(labelReady);
-        infoON(labelInfo);
     }
 
     private void onPlaying() {
@@ -363,12 +253,10 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
 
     private void onDisposed() {
         switchState(labelDisposed);
-        infoOFF(labelInfo);
     }
 
     private void onHalted() {
         switchState(labelHalted);
-        infoOFF(labelInfo);
     }
 
     private void onEndOfMedia() {
@@ -382,85 +270,6 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
     private void onError() {
         System.err.println(FXMediaPlayer.getMediaPlayer().getError().toString());
         switchState(labelError);
-        infoOFF(labelInfo);
-    }
-
-    private void onBufferProgressTime(Observable o) {
-        if (mediaDuration == 0.0) {
-            Duration duration = FXMediaPlayer.getMediaPlayer().getMedia().getDuration();
-            if (duration != null && duration != Duration.UNKNOWN) {
-                mediaDuration = duration.toMillis();
-            }
-        }
-
-        if (mediaDuration != 0.0) {
-            ReadOnlyObjectProperty prop = (ReadOnlyObjectProperty) o;
-            double bufferProgressTime = ((Duration) prop.getValue()).toMillis();
-            bufferIndicator.setProgress(bufferProgressTime / mediaDuration);
-        }
-    }
-
-    private Label createInfoLabel(String state, Color color, int height) {
-        Rectangle rect = new Rectangle(0, 0, 100, height);
-        rect.setArcHeight(20);
-        rect.setArcWidth(20);
-        rect.setFill(color);
-
-        Label label = new Label(state, rect);
-        label.setContentDisplay(ContentDisplay.CENTER);
-        label.setOpacity(OFF_OPACITY);
-
-        return label;
-    }
-
-    private String getInfoText() {
-        return String.format(labelInfoText, getStringTime(),
-                volume, balance, rate, count);
-    }
-
-    private String getStringTime() {
-        int intElapsed = (int) Math.floor(time.toSeconds());
-        int elapsedHours = intElapsed / (60 * 60);
-        int elapsedMinutes = (intElapsed - elapsedHours * 60 * 60) / 60;
-        int elapsedSeconds = intElapsed - elapsedHours * 60 * 60 - elapsedMinutes * 60;
-
-        if (elapsedHours > 0) {
-            return String.format("%d:%02d:%02d",
-                    elapsedHours, elapsedMinutes, elapsedSeconds);
-        } else {
-            return String.format("%02d:%02d",
-                    elapsedMinutes, elapsedSeconds);
-        }
-    }
-
-    private void infoON(Label labelInfo) {
-        if (infoOn) {
-            return;
-        }
-
-        FadeTransition ft = new FadeTransition(Duration.millis(500), labelInfo);
-        ft.setFromValue(OFF_OPACITY);
-        ft.setToValue(ON_OPACITY);
-        ft.play();
-
-        bufferIndicator.setDisable(false);
-
-        infoOn = true;
-    }
-
-    private void infoOFF(Label labelInfo) {
-        if (!infoOn) {
-            return;
-        }
-
-        FadeTransition ft = new FadeTransition(Duration.millis(500), labelInfo);
-        ft.setFromValue(ON_OPACITY);
-        ft.setToValue(OFF_OPACITY);
-        ft.play();
-
-        bufferIndicator.setDisable(true);
-
-        infoOn = false;
     }
 
     private Label createStateLabel(String state, Color color) {
