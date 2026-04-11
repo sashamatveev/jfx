@@ -26,19 +26,32 @@
 package fxmediaplayer.control;
 
 import fxmediaplayer.FXMediaPlayerInterface;
+import javafx.application.Platform;
 import javafx.beans.InvalidationListener;
 import javafx.beans.Observable;
+import javafx.beans.property.DoubleProperty;
+import javafx.beans.property.IntegerProperty;
 import javafx.beans.property.ReadOnlyObjectProperty;
+import javafx.beans.value.ChangeListener;
+import javafx.beans.value.ObservableValue;
 import javafx.event.ActionEvent;
 import javafx.scene.control.Button;
+import javafx.scene.control.Slider;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToolBar;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.VBox;
 import javafx.scene.media.MediaPlayer;
+import javafx.scene.input.MouseEvent;
+import javafx.util.Duration;
 
-public class MediaPlayerButtonBar {
+public class MediaPlayerToolBar {
 
     private FXMediaPlayerInterface FXMediaPlayer = null;
+    private VBox vbox = null;
     private ToolBar toolBar = null;
+    private ToolBar toolBarTimeSlider = null;
     private Button buttonPlay = null;
     private Button buttonPause = null;
     private Button buttonStop = null;
@@ -46,15 +59,49 @@ public class MediaPlayerButtonBar {
     private ToggleButton buttonSmooth = null;
     private ToggleButton buttonPreserveRatio = null;
     private ToggleButton buttonLoop = null;
+    private Button buttonStartTime = null;
+    private Button buttonStopTime = null;
+    private Button buttonCycleCount = null;
+    private Button buttonAddMarker = null;
+    private final Slider timeSlider = new Slider();
+    private boolean disableTimeSliderUpdate = false;
+    private Duration duration = null;
+    private InvalidationListener durationPropertyListener = null;
+    private ChangeListener<Duration> currentTimePropertyListener = null;
     private InvalidationListener statusPropertyListener = null;
 
-    public MediaPlayerButtonBar(FXMediaPlayerInterface FXMediaPlayer) {
+    public MediaPlayerToolBar(FXMediaPlayerInterface FXMediaPlayer) {
         this.FXMediaPlayer = FXMediaPlayer;
     }
 
-    public ToolBar getToolBar() {
-        if (toolBar == null) {
-            toolBar = new ToolBar();
+    public VBox getToolBar() {
+        if (vbox == null) {
+            vbox = new VBox();
+
+            toolBarTimeSlider = new ToolBar();
+
+            timeSlider.setMinWidth(50);
+            HBox.setHgrow(timeSlider, Priority.ALWAYS);
+            timeSlider.setMaxWidth(Double.MAX_VALUE);
+            timeSlider.setOnMousePressed((MouseEvent me) -> {
+                onTimeSliderPressed();
+            });
+            timeSlider.setOnMouseReleased((MouseEvent me) -> {
+                onTimeSliderReleased();
+            });
+            timeSlider.valueProperty().addListener(
+                    (ObservableValue<? extends Number> ov, Number o, Number n) -> {
+                onTimeSlider();
+            });
+            timeSlider.setDisable(true);
+
+            toolBarTimeSlider.getItems().add(timeSlider);
+
+            toolBarTimeSlider.setDisable(true);
+
+            vbox.getChildren().add(toolBarTimeSlider);
+
+                        toolBar = new ToolBar();
 
             // Play
             buttonPlay = new Button("Play");
@@ -111,10 +158,43 @@ public class MediaPlayerButtonBar {
             });
             toolBar.getItems().add(buttonLoop);
 
+            // Start Time
+            buttonStartTime = new Button("Start Time");
+            buttonStartTime.setOnAction((ActionEvent event) -> {
+                onButtonStartTime();
+            });
+            toolBar.getItems().add(buttonStartTime);
+
+            // Stop Time
+            buttonStopTime = new Button("Stop Time");
+            buttonStopTime.setOnAction((ActionEvent event) -> {
+                onButtonStopTime();
+            });
+            toolBar.getItems().add(buttonStopTime);
+
+            // Cycle Count
+            buttonCycleCount = new Button("Cycle Count");
+            buttonCycleCount.setOnAction((ActionEvent event) -> {
+                onButtonCycleCount();
+            });
+            toolBar.getItems().add(buttonCycleCount);
+
+            // Add Marker
+            buttonAddMarker = new Button("Add Marker");
+            buttonAddMarker.setOnAction((ActionEvent event) -> {
+                onButtonAddMarker();
+            });
+            toolBar.getItems().add(buttonAddMarker);
+
             toolBar.setDisable(true);
+
+            vbox.getChildren().add(toolBar);
+
+            createListeners();
+            addListeners();
         }
 
-        return toolBar;
+        return vbox;
     }
 
     public void onMediaPlayerChanged(MediaPlayer oldMediaPlayer) {
@@ -126,15 +206,55 @@ public class MediaPlayerButtonBar {
         onButtonLoop();
     }
 
+    @SuppressWarnings("unchecked")
+    private void createListeners() {
+        durationPropertyListener = (Observable o) -> {
+            ReadOnlyObjectProperty property = (ReadOnlyObjectProperty) o;
+            Duration d = ((Duration) property.getValue());
+            if (d.isIndefinite()) {
+                timeSlider.setDisable(true);
+            } else {
+                if (d.toMillis() > 0) {
+                    if (duration == null || !duration.equals(duration)) {
+                        duration = d;
+                        timeSlider.setDisable(false);
+                    }
+                }
+            }
+        };
+
+        currentTimePropertyListener =
+                (ObservableValue<? extends Duration> ov, Duration o, Duration n) -> {
+            if (duration != null) {
+                final Duration currentTime = n;
+                Platform.runLater(() -> {
+                    synchronized (timeSlider) {
+                        if (!disableTimeSliderUpdate) {
+                            if (duration != null) {
+                                timeSlider.setValue(currentTime.divide(duration.toMillis()).toMillis() * 100.0);
+                            } else {
+                                timeSlider.setValue(0.0);
+                            }
+                        }
+                    }
+                });
+            }
+        };
+
+        statusPropertyListener = (Observable o) -> {
+            onStatus(o);
+        };
+    }
+
     private void addListeners() {
         if (FXMediaPlayer.getMediaPlayer() == null) {
             return;
         }
 
-        statusPropertyListener = (Observable o) -> {
-            onStatus(o);
-        };
-
+        FXMediaPlayer.getMediaPlayer().getMedia().durationProperty()
+                    .addListener(durationPropertyListener);
+        FXMediaPlayer.getMediaPlayer().currentTimeProperty()
+                    .addListener(currentTimePropertyListener);
         FXMediaPlayer.getMediaPlayer()
                 .statusProperty().addListener(statusPropertyListener);
     }
@@ -144,6 +264,10 @@ public class MediaPlayerButtonBar {
             return;
         }
 
+        mediaPlayer.getMedia().durationProperty()
+                .removeListener(durationPropertyListener);
+        mediaPlayer.currentTimeProperty()
+                .removeListener(currentTimePropertyListener);
         mediaPlayer.statusProperty()
                 .removeListener(statusPropertyListener);
     }
@@ -156,9 +280,11 @@ public class MediaPlayerButtonBar {
             MediaPlayer.Status status = prop.getValue();
             if (status == MediaPlayer.Status.READY) {
                 toolBar.setDisable(false);
+                toolBarTimeSlider.setDisable(false);
             } else if (status == MediaPlayer.Status.DISPOSED ||
                     status == MediaPlayer.Status.HALTED) {
                 toolBar.setDisable(true);
+                toolBarTimeSlider.setDisable(true);
             }
         } catch (Exception e) {
             System.err.println(e.toString());
@@ -207,6 +333,43 @@ public class MediaPlayerButtonBar {
                 FXMediaPlayer.getMediaPlayer().setCycleCount(MediaPlayer.INDEFINITE);
             } else {
                 FXMediaPlayer.getMediaPlayer().setCycleCount(1);
+            }
+        }
+    }
+
+    private void onButtonStartTime() {
+    }
+
+    private void onButtonStopTime() {
+    }
+
+    private void onButtonCycleCount() {
+    }
+
+    private void onButtonAddMarker() {
+    }
+
+    private void onTimeSliderPressed() {
+        synchronized (timeSlider) {
+            disableTimeSliderUpdate = true;
+        }
+    }
+
+    private void onTimeSliderReleased() {
+        synchronized (timeSlider) {
+            if (!FXMediaPlayer.getScrubbing()) {
+                FXMediaPlayer.getMediaPlayer()
+                        .seek(duration.multiply(timeSlider.getValue() / 100.0));
+            }
+            disableTimeSliderUpdate = false;
+        }
+    }
+
+    private void onTimeSlider() {
+        if (FXMediaPlayer.getScrubbing()) {
+            if (timeSlider.isValueChanging()) {
+                FXMediaPlayer.getMediaPlayer()
+                        .seek(duration.multiply(timeSlider.getValue() / 100.0));
             }
         }
     }

@@ -38,7 +38,6 @@ public class MediaPlayerMenu {
     private FXMediaPlayerInterface FXMediaPlayer = null;
     private VBox menu = null;
     private ToolBar toolBar = null;
-    private ToolBar toolBarStates = null;
     private Button buttonOpen = null;
     private Button buttonDispose = null;
     private ToggleButton buttonAutoPlay = null;
@@ -95,10 +94,6 @@ public class MediaPlayerMenu {
             toolBar.getItems().add(buttonTest);
 
             menu.getChildren().add(toolBar);
-
-            toolBarStates = new ToolBar();
-
-            menu.getChildren().add(toolBarStates);
         }
 
         return menu;

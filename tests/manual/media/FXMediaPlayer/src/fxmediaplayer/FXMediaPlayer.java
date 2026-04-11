@@ -26,9 +26,9 @@
 package fxmediaplayer;
 
 import fxmediaplayer.control.MediaPlayerControl;
+import fxmediaplayer.events.MediaPlayerEvents;
 import fxmediaplayer.info.MediaPlayerInfo;
 import fxmediaplayer.menu.MediaPlayerMenu;
-import fxmediaplayer.states.MediaPlayerStates;
 import fxmediaplayer.test.MediaPlayerTester;
 
 import java.lang.ref.WeakReference;
@@ -62,7 +62,7 @@ public class FXMediaPlayer extends Application implements FXMediaPlayerInterface
     private ImageView imageView = null;
     private boolean autoPlay = false;
     private MediaPlayerMenu menu = null;
-    private MediaPlayerStates states = null;
+    private MediaPlayerEvents states = null;
     private MediaPlayerInfo info = null;
     private MediaPlayerControl control = null;
     private final Color sceneColor = Color.web("#F0F0F0");
@@ -194,8 +194,8 @@ public class FXMediaPlayer extends Application implements FXMediaPlayerInterface
         }
 
         if (states == null) {
-            states = new MediaPlayerStates(this);
-            pane.setLeft(states.getStates());
+            states = new MediaPlayerEvents(this);
+            pane.setLeft(states.getEvents());
         }
 
         if (info == null) {
@@ -274,7 +274,7 @@ public class FXMediaPlayer extends Application implements FXMediaPlayerInterface
             layoutChildren();
         } else {
             pane.setTop(menu.getMenu());
-            pane.setLeft(states.getStates());
+            pane.setLeft(states.getEvents());
             pane.setRight(info.getInfo());
             pane.setBottom(control.getControl());
             scene.setFill(sceneColor);
@@ -333,7 +333,7 @@ public class FXMediaPlayer extends Application implements FXMediaPlayerInterface
         double leftWidth = 0.0;
         double rightWidth = 0.0;
         if (pane.getLeft() != null) {
-            leftWidth = states.getStates().getWidth();
+            leftWidth = states.getEvents().getWidth();
         }
         if (pane.getRight() != null) {
             rightWidth = info.getInfo().getWidth();

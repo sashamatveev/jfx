@@ -27,14 +27,17 @@ package fxmediaplayer.control;
 
 import fxmediaplayer.FXMediaPlayerControlInterface;
 import fxmediaplayer.FXMediaPlayerInterface;
+import javafx.geometry.Orientation;
+import javafx.scene.control.Separator;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.media.MediaPlayer;
 
 public class MediaPlayerControl implements FXMediaPlayerControlInterface {
 
     private FXMediaPlayerInterface FXMediaPlayer = null;
-    private MediaPlayerButtonBar toolBar = null;
-    private MediaPlayerTabControl tabControl = null;
+    private MediaPlayerToolBar toolBar = null;
+    private MediaPlayerSplitPane tabControl = null;
     private VBox control = null;
 
     public MediaPlayerControl(FXMediaPlayerInterface FXMediaPlayer) {
@@ -45,12 +48,11 @@ public class MediaPlayerControl implements FXMediaPlayerControlInterface {
         if (control == null) {
             control = new VBox();
 
-            toolBar = new MediaPlayerButtonBar(FXMediaPlayer);
-            tabControl = new MediaPlayerTabControl(FXMediaPlayer);
+            toolBar = new MediaPlayerToolBar(FXMediaPlayer);
+            tabControl = new MediaPlayerSplitPane(FXMediaPlayer);
 
             control.getChildren().addAll(toolBar.getToolBar(),
-                    tabControl.getTabControl());
-
+                    tabControl.getNode());
         }
 
         return control;

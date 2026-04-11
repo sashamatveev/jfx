@@ -49,7 +49,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.media.EqualizerBand;
 import javafx.scene.media.MediaPlayer;
 
-public class MediaPlayerEqualizerTab implements FXMediaPlayerControlInterface {
+public class MediaPlayerEqualizerNode implements FXMediaPlayerControlInterface {
 
     private FXMediaPlayerInterface FXMediaPlayer = null;
     private Tab equalizerTab = null;
@@ -67,7 +67,7 @@ public class MediaPlayerEqualizerTab implements FXMediaPlayerControlInterface {
     private ArrayList<EqualizerBandControl> equalizerBandControls = null;
     private InvalidationListener statusPropertyListener = null;
 
-    public MediaPlayerEqualizerTab(FXMediaPlayerInterface FXMediaPlayer) {
+    public MediaPlayerEqualizerNode(FXMediaPlayerInterface FXMediaPlayer) {
         this.FXMediaPlayer = FXMediaPlayer;
     }
 

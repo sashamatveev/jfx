@@ -23,10 +23,11 @@
  * questions.
  */
 
-package fxmediaplayer.states;
+package fxmediaplayer.events;
 
 import fxmediaplayer.FXMediaPlayerControlInterface;
 import fxmediaplayer.FXMediaPlayerInterface;
+import fxmediaplayer.FXMediaPlayerUtils;
 import javafx.animation.FadeTransition;
 import javafx.animation.SequentialTransition;
 import javafx.application.Platform;
@@ -37,34 +38,37 @@ import javafx.beans.property.ReadOnlyIntegerProperty;
 import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.event.ActionEvent;
+import javafx.event.EventHandler;
 import javafx.geometry.Pos;
+import javafx.scene.control.Button;
 import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListView;
 import javafx.scene.control.ProgressIndicator;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import javafx.scene.media.MediaMarkerEvent;
 import javafx.scene.media.MediaPlayer;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 import javafx.util.Duration;
+import javafx.util.Pair;
 
-public class MediaPlayerStates implements FXMediaPlayerControlInterface {
+public class MediaPlayerEvents implements FXMediaPlayerControlInterface {
 
-    private static final double WIDTH = 150;
+    private static final double WIDTH = 210;
     private static final float ON_OPACITY = 1.0f;
     private static final float OFF_OPACITY = 0.1f;
     private FXMediaPlayerInterface FXMediaPlayer = null;
-    private VBox states = null;
-    private Label labelReady = null;
-    private Label labelPlaying = null;
-    private Label labelPaused = null;
-    private Label labelStopped = null;
-    private Label labelStalled = null;
-    private Label labelDisposed = null;
-    private Label labelHalted = null;
-    private Label labelEndOfMedia = null;
-    private Label labelRepeat = null;
-    private Label labelError = null;
-    private Label labelCurrentState = null;
+    private VBox events = null;
+    private Label labelState = null;
+    private ListView<String> mediaEvents = null;
+    private final ObservableList<String> mediaEventsItems =
+            FXCollections.observableArrayList();
+    private Button buttonClearEvents = null;
     private InvalidationListener statusPropertyListener = null;
     private Runnable onReadyRunnable = null;
     private Runnable onPlayingRunnable = null;
@@ -75,56 +79,48 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
     private Runnable onEndOfMediaRunnable = null;
     private Runnable onRepeatRunnable = null;
     private Runnable onErrorRunnable = null;
+    private EventHandler<MediaMarkerEvent> onMarkerListener = null;
 
-    public MediaPlayerStates(FXMediaPlayerInterface FXMediaPlayer) {
+    public MediaPlayerEvents(FXMediaPlayerInterface FXMediaPlayer) {
         this.FXMediaPlayer = FXMediaPlayer;
     }
 
-    public VBox getStates() {
-        if (states == null) {
-            states = new VBox();
+    public VBox getEvents() {
+        if (events == null) {
+            events = new VBox(5);
 
-            states.setMinWidth(WIDTH);
-            states.setMaxWidth(WIDTH);
-            states.setPrefWidth(WIDTH);
-            states.setAlignment(Pos.TOP_CENTER);
+            events.setMinWidth(WIDTH);
+            events.setMaxWidth(WIDTH);
+            events.setPrefWidth(WIDTH);
+            events.setAlignment(Pos.TOP_CENTER);
 
-            labelReady = createStateLabel(MediaPlayer.Status.READY.toString(),
+            // Create state label
+            labelState = createStateLabel(MediaPlayer.Status.UNKNOWN.toString(),
                     Color.LIGHTGRAY);
-            states.getChildren().add(labelReady);
-            labelPlaying = createStateLabel(MediaPlayer.Status.PLAYING.toString(),
-                    Color.LIGHTGRAY);
-            states.getChildren().add(labelPlaying);
-            labelPaused = createStateLabel(MediaPlayer.Status.PAUSED.toString(),
-                    Color.LIGHTGRAY);
-            states.getChildren().add(labelPaused);
-            labelStopped = createStateLabel(MediaPlayer.Status.STOPPED.toString(),
-                    Color.LIGHTGRAY);
-            states.getChildren().add(labelStopped);
-            labelStalled = createStateLabel(MediaPlayer.Status.STALLED.toString(),
-                    Color.LIGHTGRAY);
-            states.getChildren().add(labelStalled);
-            labelDisposed = createStateLabel(MediaPlayer.Status.DISPOSED.toString(),
-                    Color.LIGHTGRAY);
-            states.getChildren().add(labelDisposed);
-            labelHalted = createStateLabel(MediaPlayer.Status.HALTED.toString(),
-                    Color.RED);
-            states.getChildren().add(labelHalted);
-            labelEndOfMedia = createStateLabel("End Of Media",
-                    Color.LIGHTGRAY);
-            states.getChildren().add(labelEndOfMedia);
-            labelRepeat = createStateLabel("Repeat",
-                    Color.GRAY);
-            states.getChildren().add(labelRepeat);
-            labelError = createStateLabel("Error",
-                    Color.RED);
-            states.getChildren().add(labelError);
+            events.getChildren().add(labelState);
+
+            // Create event list view
+            mediaEvents = new ListView<>();
+            mediaEvents.setItems(mediaEventsItems);
+            mediaEvents.setMaxHeight(Double.MAX_VALUE);
+            mediaEvents.setMinWidth(WIDTH - 10);
+            mediaEvents.setMaxWidth(WIDTH - 10);
+            mediaEvents.setPrefWidth(WIDTH - 10);
+            events.setVgrow(mediaEvents, Priority.ALWAYS);
+            events.getChildren().add(mediaEvents);
+
+            // Create clear button
+            buttonClearEvents = new Button("Clear");
+            buttonClearEvents.setOnAction((ActionEvent event) -> {
+                onButtonClearEvents();
+            });
+            events.getChildren().add(buttonClearEvents);
 
             createListeners();
             addListeners();
         }
 
-        return states;
+        return events;
     }
 
     @Override
@@ -132,6 +128,8 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
         if (oldMediaPlayer != null) {
             removeListeners(oldMediaPlayer);
         }
+
+        mediaEventsItems.clear();
 
         addListeners();
     }
@@ -176,6 +174,10 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
         onErrorRunnable = () -> {
             onError();
         };
+
+        onMarkerListener = (MediaMarkerEvent event) -> {
+            onMarker(event);
+        };
     }
 
     private void addListeners() {
@@ -200,6 +202,8 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
                     .setOnRepeat(onRepeatRunnable);
             FXMediaPlayer.getMediaPlayer()
                     .setOnError(onErrorRunnable);
+            FXMediaPlayer.getMediaPlayer()
+                .setOnMarker(onMarkerListener);
         }
     }
 
@@ -215,6 +219,11 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
         mediaPlayer.setOnEndOfMedia(null);
         mediaPlayer.setOnRepeat(null);
         mediaPlayer.setOnError(null);
+        mediaPlayer.setOnMarker(null);
+    }
+
+    private void onButtonClearEvents() {
+        mediaEventsItems.clear();
     }
 
     @SuppressWarnings("unchecked")
@@ -232,44 +241,64 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
     }
 
     private void onReady() {
-        switchState(labelReady);
+        logEvent(MediaPlayer.Status.READY.toString());
+        switchState(MediaPlayer.Status.READY.toString());
     }
 
     private void onPlaying() {
-        switchState(labelPlaying);
+        logEvent(MediaPlayer.Status.PLAYING.toString());
+        switchState(MediaPlayer.Status.PLAYING.toString());
     }
 
     private void onPaused() {
-        switchState(labelPaused);
+        logEvent(MediaPlayer.Status.PAUSED.toString());
+        switchState(MediaPlayer.Status.PAUSED.toString());
     }
 
     private void onStopped() {
-        switchState(labelStopped);
+        logEvent(MediaPlayer.Status.STOPPED.toString());
+        switchState(MediaPlayer.Status.STOPPED.toString());
     }
 
     private void onStalled() {
-        switchState(labelStalled);
+        logEvent(MediaPlayer.Status.STALLED.toString());
+        switchState(MediaPlayer.Status.STALLED.toString());
     }
 
     private void onDisposed() {
-        switchState(labelDisposed);
+        logEvent(MediaPlayer.Status.DISPOSED.toString());
+        switchState(MediaPlayer.Status.DISPOSED.toString());
     }
 
     private void onHalted() {
-        switchState(labelHalted);
+        logEvent(MediaPlayer.Status.HALTED.toString());
+        switchState(MediaPlayer.Status.HALTED.toString());
     }
 
     private void onEndOfMedia() {
-        stateONOFF(labelEndOfMedia);
+        logEvent("onEndOfMedia");
     }
 
     private void onRepeat() {
-        stateONOFF(labelRepeat);
+        logEvent("onRepeat");
     }
 
     private void onError() {
-        System.err.println(FXMediaPlayer.getMediaPlayer().getError().toString());
-        switchState(labelError);
+        System.err.println("Error: " + FXMediaPlayer.getMediaPlayer().getError().toString());
+        logEvent("onError");
+    }
+
+    private void onMarker(MediaMarkerEvent event) {
+        if (event != null) {
+            Pair<String, Duration> pair = event.getMarker();
+            logEvent(pair.getKey() + " (" + FXMediaPlayerUtils.secondsToString(pair.getValue().toSeconds()) + ")");
+        };
+    }
+
+    private void logEvent(String event) {
+        System.err.println("Event: " + event);
+        String logEntry = mediaEventsItems.size() + ": " + event;
+        mediaEventsItems.addFirst(logEntry);
     }
 
     private Label createStateLabel(String state, Color color) {
@@ -285,12 +314,10 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
         return label;
     }
 
-    private void switchState(Label labelState) {
-        if (labelCurrentState != null) {
-            stateOFF(labelCurrentState);
-        }
+    private void switchState(String text) {
+        stateOFF(labelState);
+        labelState.setText(text);
         stateON(labelState);
-        labelCurrentState = labelState;
     }
 
     private void stateON(Label labelState) {
@@ -305,17 +332,5 @@ public class MediaPlayerStates implements FXMediaPlayerControlInterface {
         ft.setFromValue(ON_OPACITY);
         ft.setToValue(OFF_OPACITY);
         ft.play();
-    }
-
-    private void stateONOFF(Label labelState) {
-        SequentialTransition st = new SequentialTransition();
-        FadeTransition ftON = new FadeTransition(Duration.millis(500), labelState);
-        ftON.setFromValue(OFF_OPACITY);
-        ftON.setToValue(ON_OPACITY);
-        FadeTransition ftOFF = new FadeTransition(Duration.millis(500), labelState);
-        ftOFF.setFromValue(ON_OPACITY);
-        ftOFF.setToValue(OFF_OPACITY);
-        st.getChildren().addAll(ftON, ftOFF);
-        st.play();
     }
 }

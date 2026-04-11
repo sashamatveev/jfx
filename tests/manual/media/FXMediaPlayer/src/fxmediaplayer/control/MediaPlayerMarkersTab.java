@@ -176,8 +176,8 @@ public class MediaPlayerMarkersTab implements FXMediaPlayerControlInterface {
         FXMediaPlayer.getMediaPlayer().getMedia()
                 .durationProperty().addListener(durationPropertyListener);
 
-        FXMediaPlayer.getMediaPlayer()
-                .setOnMarker(onMarkerListener);
+        // FXMediaPlayer.getMediaPlayer()
+        //         .setOnMarker(onMarkerListener);
         FXMediaPlayer.getMediaPlayer()
                 .statusProperty().addListener(statusPropertyListener);
     }
@@ -189,7 +189,7 @@ public class MediaPlayerMarkersTab implements FXMediaPlayerControlInterface {
 
         mediaPlayer.getMedia()
                 .durationProperty().removeListener(durationPropertyListener);
-        mediaPlayer.setOnMarker(null);
+        //mediaPlayer.setOnMarker(null);
         mediaPlayer.statusProperty()
                 .removeListener(statusPropertyListener);
     }

@@ -50,7 +50,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.media.MediaPlayer;
 import javafx.util.Duration;
 
-public class MediaPlayerControlTab implements FXMediaPlayerControlInterface {
+public class MediaPlayerControlNode implements FXMediaPlayerControlInterface {
 
     private FXMediaPlayerInterface FXMediaPlayer = null;
     private Duration duration = null;
@@ -75,7 +75,7 @@ public class MediaPlayerControlTab implements FXMediaPlayerControlInterface {
     private InvalidationListener cycleCountPropertyListener = null;
     private InvalidationListener statusPropertyListener = null;
 
-    public MediaPlayerControlTab(FXMediaPlayerInterface FXMediaPlayer) {
+    public MediaPlayerControlNode(FXMediaPlayerInterface FXMediaPlayer) {
         this.FXMediaPlayer = FXMediaPlayer;
     }
 

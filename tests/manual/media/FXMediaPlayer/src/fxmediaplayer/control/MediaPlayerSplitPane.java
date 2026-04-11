@@ -27,34 +27,32 @@ package fxmediaplayer.control;
 
 import fxmediaplayer.FXMediaPlayerControlInterface;
 import fxmediaplayer.FXMediaPlayerInterface;
+import javafx.scene.Node;
+import javafx.scene.control.SplitPane;
 import javafx.scene.control.TabPane;
 import javafx.scene.media.MediaPlayer;
 
-public class MediaPlayerTabControl implements FXMediaPlayerControlInterface {
+public class MediaPlayerSplitPane implements FXMediaPlayerControlInterface {
 
     private FXMediaPlayerInterface FXMediaPlayer = null;
-    private TabPane tabControl = null;
-    private MediaPlayerControlTab controlTab = null;
-    private MediaPlayerSpectrumTab spectrumTab = null;
-    private MediaPlayerEqualizerTab equalizerTab = null;
-    private MediaPlayerEffectsTab effectsTab = null;
-    private MediaPlayerMarkersTab markersTab = null;
-    private MediaPlayerPlayListTab playListTab = null;
+    private SplitPane splitPane = null;
+    private MediaPlayerControlNode controlNode = null;
+    private MediaPlayerEffectsNode effectsNode = null;
+    private MediaPlayerEqualizerNode equalizerNode = null;
+    private MediaPlayerSpectrumNode spectrumNode = null;
 
-    public MediaPlayerTabControl(FXMediaPlayerInterface FXMediaPlayer) {
+    public MediaPlayerSplitPane(FXMediaPlayerInterface FXMediaPlayer) {
         this.FXMediaPlayer = FXMediaPlayer;
     }
 
-    public TabPane getTabControl() {
-        if (tabControl == null) {
-            tabControl = new TabPane();
-            tabControl.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
-            tabControl.setPrefHeight(200);
+    public Node getNode() {
+        if (splitPane == null) {
+            splitPane = new SplitPane();
 
-            controlTab = new MediaPlayerControlTab(FXMediaPlayer);
-            spectrumTab = new MediaPlayerSpectrumTab(FXMediaPlayer);
-            equalizerTab = new MediaPlayerEqualizerTab(FXMediaPlayer);
-            effectsTab = new MediaPlayerEffectsTab(FXMediaPlayer);
+            controlTab = new MediaPlayerControlNode(FXMediaPlayer);
+            spectrumTab = new MediaPlayerSpectrumNode(FXMediaPlayer);
+            equalizerTab = new MediaPlayerEqualizerNode(FXMediaPlayer);
+            effectsTab = new MediaPlayerEffectsNode(FXMediaPlayer);
             markersTab = new MediaPlayerMarkersTab(FXMediaPlayer);
             playListTab = new MediaPlayerPlayListTab(FXMediaPlayer);
 

@@ -47,7 +47,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.media.MediaPlayer;
 
-public class MediaPlayerEffectsTab implements FXMediaPlayerControlInterface {
+public class MediaPlayerEffectsNode implements FXMediaPlayerControlInterface {
 
     private FXMediaPlayerInterface FXMediaPlayer = null;
     private ColorAdjust colorAdjust = null;
@@ -68,7 +68,7 @@ public class MediaPlayerEffectsTab implements FXMediaPlayerControlInterface {
     private Slider sepiaToneSlider = null;
     private InvalidationListener statusPropertyListener = null;
 
-    public MediaPlayerEffectsTab(FXMediaPlayerInterface FXMediaPlayer) {
+    public MediaPlayerEffectsNode(FXMediaPlayerInterface FXMediaPlayer) {
         this.FXMediaPlayer = FXMediaPlayer;
     }
 

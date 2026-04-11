@@ -41,7 +41,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.media.AudioSpectrumListener;
 import javafx.scene.media.MediaPlayer;
 
-public class MediaPlayerSpectrumTab implements FXMediaPlayerControlInterface {
+public class MediaPlayerSpectrumNode implements FXMediaPlayerControlInterface {
 
     private FXMediaPlayerInterface FXMediaPlayer = null;
     private Tab spectrumTab = null;
@@ -49,7 +49,7 @@ public class MediaPlayerSpectrumTab implements FXMediaPlayerControlInterface {
     private XYChart.Data<String, Number>[] seriesData;
     private InvalidationListener statusPropertyListener = null;
 
-    public MediaPlayerSpectrumTab(FXMediaPlayerInterface FXMediaPlayer) {
+    public MediaPlayerSpectrumNode(FXMediaPlayerInterface FXMediaPlayer) {
         this.FXMediaPlayer = FXMediaPlayer;
     }
 
