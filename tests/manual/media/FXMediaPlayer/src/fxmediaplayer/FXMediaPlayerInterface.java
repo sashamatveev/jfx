@@ -46,7 +46,7 @@ public interface FXMediaPlayerInterface {
 
     public void setScrubbing(boolean isScrubbingOn);
 
-    public void setTester(MediaPlayerTester mediaPlayerTester);
+    public MediaPlayerTester getTester();
 
     public boolean getScrubbing();
 }

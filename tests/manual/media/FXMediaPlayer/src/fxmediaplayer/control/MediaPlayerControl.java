@@ -37,7 +37,7 @@ public class MediaPlayerControl implements FXMediaPlayerControlInterface {
 
     private FXMediaPlayerInterface FXMediaPlayer = null;
     private MediaPlayerToolBar toolBar = null;
-    private MediaPlayerSplitPane tabControl = null;
+    private MediaPlayerSplitPane splitPane = null;
     private VBox control = null;
 
     public MediaPlayerControl(FXMediaPlayerInterface FXMediaPlayer) {
@@ -49,10 +49,10 @@ public class MediaPlayerControl implements FXMediaPlayerControlInterface {
             control = new VBox();
 
             toolBar = new MediaPlayerToolBar(FXMediaPlayer);
-            tabControl = new MediaPlayerSplitPane(FXMediaPlayer);
+            splitPane = new MediaPlayerSplitPane(FXMediaPlayer);
 
             control.getChildren().addAll(toolBar.getToolBar(),
-                    tabControl.getNode());
+                    splitPane.getNode());
         }
 
         return control;
@@ -61,6 +61,6 @@ public class MediaPlayerControl implements FXMediaPlayerControlInterface {
     @Override
     public void onMediaPlayerChanged(MediaPlayer oldMediaPlayer) {
         toolBar.onMediaPlayerChanged(oldMediaPlayer);
-        tabControl.onMediaPlayerChanged(oldMediaPlayer);
+        splitPane.onMediaPlayerChanged(oldMediaPlayer);
     }
 }

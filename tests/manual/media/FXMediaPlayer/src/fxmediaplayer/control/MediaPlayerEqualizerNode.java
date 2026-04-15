@@ -36,6 +36,7 @@ import javafx.beans.value.ObservableValue;
 import javafx.event.ActionEvent;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
@@ -52,7 +53,7 @@ import javafx.scene.media.MediaPlayer;
 public class MediaPlayerEqualizerNode implements FXMediaPlayerControlInterface {
 
     private FXMediaPlayerInterface FXMediaPlayer = null;
-    private Tab equalizerTab = null;
+    private VBox equalizer = null;
     private ToggleButton buttonEnable = null;
     private Button buttonReset = null;
     private Label bandIndexLabel = null;
@@ -65,22 +66,17 @@ public class MediaPlayerEqualizerNode implements FXMediaPlayerControlInterface {
     private Label gainInfoLabel = null;
     private HBox equalizerControl = null;
     private ArrayList<EqualizerBandControl> equalizerBandControls = null;
-    private InvalidationListener statusPropertyListener = null;
 
     public MediaPlayerEqualizerNode(FXMediaPlayerInterface FXMediaPlayer) {
         this.FXMediaPlayer = FXMediaPlayer;
     }
 
-    public Tab getEqualizerTab() {
-        if (equalizerTab == null) {
+    public Node getNode() {
+        if (equalizer == null) {
             equalizerBandControls = new ArrayList<>();
 
-            equalizerTab = new Tab();
-            equalizerTab.setText("Equalizer");
-
-            VBox equalizerTabContent = new VBox();
-            equalizerTabContent.setId("mediaPlayerTab");
-            equalizerTabContent.setAlignment(Pos.TOP_CENTER);
+            equalizer = new VBox();
+            equalizer.setAlignment(Pos.TOP_CENTER);
 
             // ToolBar
             ToolBar toolBar = new ToolBar();
@@ -138,7 +134,7 @@ public class MediaPlayerEqualizerNode implements FXMediaPlayerControlInterface {
             }
             toolBar.getItems().add(gainLabel);
 
-            equalizerTabContent.getChildren().add(toolBar);
+            equalizer.getChildren().add(toolBar);
 
             // Equalizer control
             equalizerControl = new HBox(10);
@@ -146,8 +142,7 @@ public class MediaPlayerEqualizerNode implements FXMediaPlayerControlInterface {
                 equalizerControl.setDisable(true);
             }
             equalizerControl.setAlignment(Pos.CENTER);
-            equalizerTabContent.getChildren().add(equalizerControl);
-            equalizerTab.setContent(equalizerTabContent);
+            equalizer.getChildren().add(equalizerControl);
 
             // Create our own list of bands based on default ones
             createBands();
@@ -159,56 +154,21 @@ public class MediaPlayerEqualizerNode implements FXMediaPlayerControlInterface {
             addBands();
         }
 
-        return equalizerTab;
+        return equalizer;
     }
 
     @Override
     public void onMediaPlayerChanged(MediaPlayer oldMediaPlayer) {
-        removeListeners(oldMediaPlayer);
-
         if (oldMediaPlayer != null) {
             oldMediaPlayer.getAudioEqualizer().setEnabled(false);
             clearBands(oldMediaPlayer);
         }
-
-        addListeners();
 
         if (FXMediaPlayer.getMediaPlayer() != null) {
             clearBands(FXMediaPlayer.getMediaPlayer());
             addBands();
             onButtonEnable();
         }
-    }
-
-    @SuppressWarnings("unchecked")
-    private void addListeners() {
-        if (FXMediaPlayer.getMediaPlayer() == null) {
-            return;
-        }
-
-        statusPropertyListener = (Observable o) -> {
-            ReadOnlyObjectProperty<MediaPlayer.Status> prop =
-                    (ReadOnlyObjectProperty<MediaPlayer.Status>) o;
-            MediaPlayer.Status status = prop.getValue();
-            if (status == MediaPlayer.Status.READY) {
-                equalizerTab.setDisable(false);
-            } else if (status == MediaPlayer.Status.DISPOSED ||
-                    status == MediaPlayer.Status.HALTED) {
-                equalizerTab.setDisable(true);
-            }
-        };
-
-        FXMediaPlayer.getMediaPlayer()
-                .statusProperty().addListener(statusPropertyListener);
-    }
-
-    private void removeListeners(MediaPlayer mediaPlayer) {
-        if (mediaPlayer == null) {
-            return;
-        }
-
-        mediaPlayer.statusProperty()
-                .removeListener(statusPropertyListener);
     }
 
     private void createBands() {

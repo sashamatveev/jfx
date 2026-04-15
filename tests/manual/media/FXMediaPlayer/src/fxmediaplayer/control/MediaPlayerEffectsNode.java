@@ -34,6 +34,7 @@ import javafx.beans.value.ObservableValue;
 import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.Slider;
@@ -52,7 +53,7 @@ public class MediaPlayerEffectsNode implements FXMediaPlayerControlInterface {
     private FXMediaPlayerInterface FXMediaPlayer = null;
     private ColorAdjust colorAdjust = null;
     private SepiaTone sepiaTone = null;
-    private Tab effectsTab = null;
+    private VBox effects = null;
     private ToggleButton enableButton = null;
     private Button resetButton = null;
     private GridPane controlGrid = null;
@@ -66,23 +67,18 @@ public class MediaPlayerEffectsNode implements FXMediaPlayerControlInterface {
     private Slider saturationSlider = null;
     private Label sepiaToneLabel = null;
     private Slider sepiaToneSlider = null;
-    private InvalidationListener statusPropertyListener = null;
 
     public MediaPlayerEffectsNode(FXMediaPlayerInterface FXMediaPlayer) {
         this.FXMediaPlayer = FXMediaPlayer;
     }
 
-    public Tab getColorAdjustTab() {
-        if (effectsTab == null) {
+    public Node getNode() {
+        if (effects == null) {
             colorAdjust = new ColorAdjust();
             sepiaTone = new SepiaTone();
 
-            effectsTab = new Tab();
-            effectsTab.setText("Effects");
-
-            VBox colorAdjustTabContent = new VBox(0);
-            colorAdjustTabContent.setId("mediaPlayerTab");
-            colorAdjustTabContent.setAlignment(Pos.TOP_CENTER);
+            effects = new VBox(0);
+            effects.setAlignment(Pos.TOP_CENTER);
 
             // ToolBar
             ToolBar toolBar = new ToolBar();
@@ -100,7 +96,7 @@ public class MediaPlayerEffectsNode implements FXMediaPlayerControlInterface {
             });
             toolBar.getItems().add(resetButton);
 
-            colorAdjustTabContent.getChildren().add(toolBar);
+            effects.getChildren().add(toolBar);
 
             controlGrid = new GridPane();
             controlGrid.setPadding(new Insets(10, 0, 0, 0));
@@ -174,51 +170,16 @@ public class MediaPlayerEffectsNode implements FXMediaPlayerControlInterface {
             controlGrid.add(sepiaToneLabel, 0, 4);
             controlGrid.add(sepiaToneSlider, 1, 4);
 
-            colorAdjustTabContent.getChildren().add(controlGrid);
+            effects.getChildren().add(controlGrid);
 
-            effectsTab.setContent(colorAdjustTabContent);
-
-            controlGrid.setDisable(true);
+            effects.setDisable(true);
         }
 
-        return effectsTab;
+        return effects;
     }
 
     @Override
     public void onMediaPlayerChanged(MediaPlayer oldMediaPlayer) {
-        removeListeners(oldMediaPlayer);
-        addListeners();
-    }
-
-    @SuppressWarnings("unchecked")
-    private void addListeners() {
-        if (FXMediaPlayer.getMediaPlayer() == null) {
-            return;
-        }
-
-        statusPropertyListener = (Observable o) -> {
-            ReadOnlyObjectProperty<MediaPlayer.Status> prop =
-                    (ReadOnlyObjectProperty<MediaPlayer.Status>) o;
-            MediaPlayer.Status status = prop.getValue();
-            if (status == MediaPlayer.Status.READY) {
-                effectsTab.setDisable(false);
-            } else if (status == MediaPlayer.Status.DISPOSED ||
-                    status == MediaPlayer.Status.HALTED) {
-                effectsTab.setDisable(true);
-            }
-        };
-
-        FXMediaPlayer.getMediaPlayer()
-                .statusProperty().addListener(statusPropertyListener);
-    }
-
-    private void removeListeners(MediaPlayer mediaPlayer) {
-        if (mediaPlayer == null) {
-            return;
-        }
-
-        mediaPlayer.statusProperty()
-                .removeListener(statusPropertyListener);
     }
 
     private void onEnableButton() {

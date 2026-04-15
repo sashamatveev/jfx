@@ -26,6 +26,7 @@
 package fxmediaplayer.control;
 
 import fxmediaplayer.FXMediaPlayerInterface;
+import fxmediaplayer.test.MediaPlayerController;
 import javafx.application.Platform;
 import javafx.beans.InvalidationListener;
 import javafx.beans.Observable;
@@ -101,7 +102,7 @@ public class MediaPlayerToolBar {
 
             vbox.getChildren().add(toolBarTimeSlider);
 
-                        toolBar = new ToolBar();
+            toolBar = new ToolBar();
 
             // Play
             buttonPlay = new Button("Play");
@@ -190,6 +191,7 @@ public class MediaPlayerToolBar {
 
             vbox.getChildren().add(toolBar);
 
+            addToController();
             createListeners();
             addListeners();
         }
@@ -204,6 +206,21 @@ public class MediaPlayerToolBar {
         onButtonSmooth();
         onButtonPreserveRatio();
         onButtonLoop();
+    }
+
+    private void addToController() {
+        if (FXMediaPlayer.getTester() == null) {
+            return;
+        }
+
+        if (FXMediaPlayer.getTester().getController() == null) {
+            return;
+        }
+
+        MediaPlayerController controller = FXMediaPlayer.getTester().getController();
+        controller.setPlayButton(buttonPlay);
+        controller.setPauseButton(buttonPause);
+        controller.setStopButton(buttonStop);
     }
 
     @SuppressWarnings("unchecked")

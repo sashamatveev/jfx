@@ -124,11 +124,6 @@ public class MediaPlayerMenu {
     }
 
     private void onButtonTest() {
-        if (mediaPlayerTester == null) {
-            mediaPlayerTester = new MediaPlayerTester();
-            FXMediaPlayer.setTester(mediaPlayerTester);
-        }
-
-        mediaPlayerTester.openTesterWindow();
+        FXMediaPlayer.getTester().openTesterWindow();
     }
 }

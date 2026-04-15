@@ -31,6 +31,7 @@ import javafx.beans.InvalidationListener;
 import javafx.beans.Observable;
 import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.event.Event;
+import javafx.scene.Node;
 import javafx.scene.chart.BarChart;
 import javafx.scene.chart.CategoryAxis;
 import javafx.scene.chart.Chart;
@@ -44,31 +45,22 @@ import javafx.scene.media.MediaPlayer;
 public class MediaPlayerSpectrumNode implements FXMediaPlayerControlInterface {
 
     private FXMediaPlayerInterface FXMediaPlayer = null;
-    private Tab spectrumTab = null;
-    private AudioSpectrumListenerImpl listener = null;
+    private VBox spectrum = null;
+    private AudioSpectrumListenerImpl audioSpectrumListener = null;
     private XYChart.Data<String, Number>[] seriesData;
-    private InvalidationListener statusPropertyListener = null;
 
     public MediaPlayerSpectrumNode(FXMediaPlayerInterface FXMediaPlayer) {
         this.FXMediaPlayer = FXMediaPlayer;
     }
 
-    public Tab getSpectrumTab() {
-        if (spectrumTab == null) {
-            spectrumTab = new Tab();
-            spectrumTab.setText("Spectrum");
-            spectrumTab.setOnSelectionChanged((Event t) -> {
-                onSelectionChanged();
-            });
+    public Node getNode() {
+        if (spectrum == null) {
+            spectrum = new VBox();
 
-            VBox vBox = new VBox();
-            vBox.setId("mediaPlayerTab");
-            vBox.getChildren().add(createBarChart());
-
-            spectrumTab.setContent(vBox);
+            spectrum.getChildren().add(createBarChart());
         }
 
-        return spectrumTab;
+        return spectrum;
     }
 
     @Override
@@ -83,20 +75,11 @@ public class MediaPlayerSpectrumNode implements FXMediaPlayerControlInterface {
             return;
         }
 
-        statusPropertyListener = (Observable o) -> {
-            ReadOnlyObjectProperty<MediaPlayer.Status> prop =
-                    (ReadOnlyObjectProperty<MediaPlayer.Status>) o;
-            MediaPlayer.Status status = prop.getValue();
-            if (status == MediaPlayer.Status.READY) {
-                spectrumTab.setDisable(false);
-            } else if (status == MediaPlayer.Status.DISPOSED ||
-                    status == MediaPlayer.Status.HALTED) {
-                spectrumTab.setDisable(true);
-            }
-        };
+        if (audioSpectrumListener == null) {
+            audioSpectrumListener = new AudioSpectrumListenerImpl();
+        }
 
-        FXMediaPlayer.getMediaPlayer()
-                .statusProperty().addListener(statusPropertyListener);
+        FXMediaPlayer.getMediaPlayer().setAudioSpectrumListener(audioSpectrumListener);
     }
 
     private void removeListeners(MediaPlayer mediaPlayer) {
@@ -104,23 +87,7 @@ public class MediaPlayerSpectrumNode implements FXMediaPlayerControlInterface {
             return;
         }
 
-        mediaPlayer.statusProperty()
-                .removeListener(statusPropertyListener);
-    }
-
-    private void onSelectionChanged() {
-        if (FXMediaPlayer.getMediaPlayer() == null) {
-            return;
-        }
-
-        if (spectrumTab.isSelected()) {
-            if (listener == null) {
-                listener = new AudioSpectrumListenerImpl();
-            }
-            FXMediaPlayer.getMediaPlayer().setAudioSpectrumListener(listener);
-        } else {
-            FXMediaPlayer.getMediaPlayer().setAudioSpectrumListener(null);
-        }
+        mediaPlayer.setAudioSpectrumListener(null);
     }
 
     @SuppressWarnings("unchecked")

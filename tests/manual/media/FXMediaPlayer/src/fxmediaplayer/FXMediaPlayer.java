@@ -78,6 +78,8 @@ public class FXMediaPlayer extends Application implements FXMediaPlayerInterface
 
     @Override
     public void start(Stage stage) {
+        mediaPlayerTester = new MediaPlayerTester(this);
+
         this.stage = stage;
 
         stage.setTitle("FX Media Player");
@@ -252,8 +254,8 @@ public class FXMediaPlayer extends Application implements FXMediaPlayerInterface
     }
 
     @Override
-    public void setTester(MediaPlayerTester mediaPlayerTester) {
-        this.mediaPlayerTester = mediaPlayerTester;
+    public MediaPlayerTester getTester() {
+        return mediaPlayerTester;
     }
 
     @Override

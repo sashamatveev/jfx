@@ -28,6 +28,7 @@ package fxmediaplayer.events;
 import fxmediaplayer.FXMediaPlayerControlInterface;
 import fxmediaplayer.FXMediaPlayerInterface;
 import fxmediaplayer.FXMediaPlayerUtils;
+import fxmediaplayer.test.MediaPlayerController;
 import javafx.animation.FadeTransition;
 import javafx.animation.SequentialTransition;
 import javafx.application.Platform;
@@ -116,6 +117,7 @@ public class MediaPlayerEvents implements FXMediaPlayerControlInterface {
             });
             events.getChildren().add(buttonClearEvents);
 
+            addToController();
             createListeners();
             addListeners();
         }
@@ -132,6 +134,20 @@ public class MediaPlayerEvents implements FXMediaPlayerControlInterface {
         mediaEventsItems.clear();
 
         addListeners();
+    }
+
+    private void addToController() {
+        if (FXMediaPlayer.getTester() == null) {
+            return;
+        }
+
+        if (FXMediaPlayer.getTester().getController() == null) {
+            return;
+        }
+
+        MediaPlayerController controller = FXMediaPlayer.getTester().getController();
+        controller.setMediaEvents(mediaEventsItems);
+        controller.setClearEvents(buttonClearEvents);
     }
 
     private void createListeners() {

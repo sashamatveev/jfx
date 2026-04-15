@@ -49,30 +49,25 @@ public class MediaPlayerSplitPane implements FXMediaPlayerControlInterface {
         if (splitPane == null) {
             splitPane = new SplitPane();
 
-            controlTab = new MediaPlayerControlNode(FXMediaPlayer);
-            spectrumTab = new MediaPlayerSpectrumNode(FXMediaPlayer);
-            equalizerTab = new MediaPlayerEqualizerNode(FXMediaPlayer);
-            effectsTab = new MediaPlayerEffectsNode(FXMediaPlayer);
-            markersTab = new MediaPlayerMarkersTab(FXMediaPlayer);
-            playListTab = new MediaPlayerPlayListTab(FXMediaPlayer);
+            controlNode = new MediaPlayerControlNode(FXMediaPlayer);
+            effectsNode = new MediaPlayerEffectsNode(FXMediaPlayer);
+            equalizerNode = new MediaPlayerEqualizerNode(FXMediaPlayer);
+            spectrumNode = new MediaPlayerSpectrumNode(FXMediaPlayer);
 
-            tabControl.getTabs().add(controlTab.getControlTab());
-            tabControl.getTabs().add(spectrumTab.getSpectrumTab());
-            tabControl.getTabs().add(equalizerTab.getEqualizerTab());
-            tabControl.getTabs().add(effectsTab.getColorAdjustTab());
-            tabControl.getTabs().add(markersTab.getMarkersTab());
-            tabControl.getTabs().add(playListTab.getPlayListTab());
+            splitPane.getItems().add(controlNode.getNode());
+            splitPane.getItems().add(effectsNode.getNode());
+            splitPane.getItems().add(equalizerNode.getNode());
+            splitPane.getItems().add(spectrumNode.getNode());
         }
 
-        return tabControl;
+        return splitPane;
     }
 
     @Override
     public void onMediaPlayerChanged(MediaPlayer oldMediaPlayer) {
-        controlTab.onMediaPlayerChanged(oldMediaPlayer);
-        spectrumTab.onMediaPlayerChanged(oldMediaPlayer);
-        equalizerTab.onMediaPlayerChanged(oldMediaPlayer);
-        effectsTab.onMediaPlayerChanged(oldMediaPlayer);
-        markersTab.onMediaPlayerChanged(oldMediaPlayer);
+        controlNode.onMediaPlayerChanged(oldMediaPlayer);
+        effectsNode.onMediaPlayerChanged(oldMediaPlayer);
+        equalizerNode.onMediaPlayerChanged(oldMediaPlayer);
+        spectrumNode.onMediaPlayerChanged(oldMediaPlayer);
     }
 }
