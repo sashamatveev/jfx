@@ -48,8 +48,8 @@ public:
     void SetStreamLength(QWORD qwLength);
     bool IsSeekSupported();
     HRESULT CompleteReadData(HRESULT hr);
-//     void SignalEOS();
-//     void ClearEOS();
+    void SignalEOS();
+    void ClearEOS();
     BOOL IsReload();
 
     // IMFByteStream

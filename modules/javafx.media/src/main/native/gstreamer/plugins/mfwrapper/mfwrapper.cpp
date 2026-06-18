@@ -1552,9 +1552,9 @@ static gboolean mfwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent *e
             {
                 decoder->is_decoder_error = TRUE;
                 gst_element_message_full(GST_ELEMENT(decoder), GST_MESSAGE_ERROR,
-                                     GST_STREAM_ERROR, GST_STREAM_ERROR_DECODE,
-                                     g_strdup("Failed to reload decoder"), NULL,
-                                     ("mfwrapper.c"), ("mfwrapper_sink_event"), 0);
+                        GST_STREAM_ERROR, GST_STREAM_ERROR_DECODE,
+                        g_strdup("Failed to reload decoder"), NULL,
+                        ("mfwrapper.c"), ("mfwrapper_sink_event"), 0);
             }
             else
             {

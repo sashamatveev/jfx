@@ -25,7 +25,7 @@
 
 #include "mfgstbytestream.h"
 
-#define ENABLE_TRACE 1
+#define ENABLE_TRACE 0
 #if ENABLE_TRACE
     #define TRACE g_print
 #else // ENABLE_TRACE
@@ -111,18 +111,18 @@ HRESULT CMFGSTByteStream::CompleteReadData(HRESULT hr)
     return S_OK;
 }
 
-// void CMFGSTByteStream::SignalEOS()
-// {
-//     TRACE("JFXMEDIA CMFGSTByteStream::SignalEOS()\n");
-//     m_bIsEOSEventReceived = TRUE;
-// }
+void CMFGSTByteStream::SignalEOS()
+{
+    TRACE("JFXMEDIA CMFGSTByteStream::SignalEOS()\n");
+    m_bIsEOSEventReceived = TRUE;
+}
 
-// void CMFGSTByteStream::ClearEOS()
-// {
-//     TRACE("JFXMEDIA CMFGSTByteStream::ClearEOS()\n");
-//     m_bIsEOS = FALSE;
-//     m_bIsEOSEventReceived = FALSE;
-// }
+void CMFGSTByteStream::ClearEOS()
+{
+    TRACE("JFXMEDIA CMFGSTByteStream::ClearEOS()\n");
+    m_bIsEOS = FALSE;
+    m_bIsEOSEventReceived = FALSE;
+}
 
 BOOL CMFGSTByteStream::IsReload()
 {
