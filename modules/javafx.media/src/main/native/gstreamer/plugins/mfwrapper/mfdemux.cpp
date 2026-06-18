@@ -428,6 +428,7 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
         // Start task if needed
         if (demux->start_task_on_first_segment)
         {
+            g_print("JFXMEDIA TEMP mfdemux_sink_event() starting task on first segment ready\n");
             gst_pad_start_task(pad, (GstTaskFunction) mfdemux_loop, pad, NULL);
             demux->start_task_on_first_segment = FALSE;
         }
@@ -495,7 +496,7 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
             g_mutex_lock(&demux->lock);
             if (demux->src_result == GST_FLOW_ERROR ||
                 demux->pGSTMFByteStream == NULL ||
-                demux->pSourceReader == NULL)
+                (!demux->is_hls && demux->pSourceReader == NULL))
             {
                 g_mutex_unlock(&demux->lock);
                 // INLINE - gst_event_unref()
@@ -514,6 +515,8 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
             gst_event_parse_seek (event, &rate, &format, &flags,
                     &start_type, &start, &stop_type, &stop);
             seqnum = gst_event_get_seqnum(event);
+            g_print("JFXMEDIA TEMP mfdemux_src_event() SEEK rate %lf format %d flags 0x%X start_type %d start %lld stop_type %d stop %lld is_hls %d\n",
+                    rate, format, flags, start_type, start, stop_type, stop, demux->is_hls);
             if (format == GST_FORMAT_TIME)
             {
                 if (flags & GST_SEEK_FLAG_FLUSH)
@@ -534,7 +537,8 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                 // it should release stream lock when doing it.
                 GST_PAD_STREAM_LOCK(demux->sink_pad);
                 // Unblock source reader if it was waiting for read.
-                demux->pSourceReader->Flush(MF_SOURCE_READER_ALL_STREAMS);
+                if (demux->pSourceReader != NULL) // Can be NULL for HLS
+                    demux->pSourceReader->Flush(MF_SOURCE_READER_ALL_STREAMS);
                 // Unlock stream lock so streaming thread can continue.
                 GST_PAD_STREAM_UNLOCK(demux->sink_pad);
 
@@ -544,6 +548,7 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                 if (demux->is_hls)
                 {
                     // Upstream will handle and unref event
+                    g_print("JFXMEDIA TEMP mfdemux_src_event() forwarding HLS seek upstream\n");
                     ret = gst_pad_push_event(demux->sink_pad, event);
                 }
                 else
@@ -556,6 +561,7 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                     pv.vt = VT_I8;
                     pv.hVal.QuadPart = (LONGLONG)(start / 100);
                     hr = demux->pSourceReader->SetCurrentPosition(GUID_NULL, pv);
+                    g_print("JFXMEDIA TEMP mfdemux_src_event() SetCurrentPosition() hr=0x%X seek_time=%lld\n", hr, start);
                     PropVariantClear(&pv);
 
                     // INLINE - gst_event_unref()
@@ -582,11 +588,13 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                     if (demux->is_hls)
                     {
                         // For HLS just reload
+                        g_print("JFXMEDIA TEMP mfdemux_src_event() reloading demux after HLS seek\n");
                         mfdemux_reload_demux(demux, TRUE);
                     }
                     else
                     {
                         // Start streaming thread
+                        g_print("JFXMEDIA TEMP mfdemux_src_event() restarting task after seek\n");
                         gst_pad_start_task(demux->sink_pad, (GstTaskFunction)mfdemux_loop,
                                            demux->sink_pad, NULL);
                     }
@@ -613,6 +621,9 @@ static void mfdemux_reload_demux(GstMFDemux *demux, gboolean bSeek)
 {
     if (demux->pGSTMFByteStream == NULL)
         return; // Unlikely
+
+    g_print("JFXMEDIA TEMP mfdemux_reload_demux() bSeek=%d is_demux_initialized=%d is_eos=%d start_task_on_first_segment=%d\n",
+            bSeek, demux->is_demux_initialized, demux->is_eos, demux->start_task_on_first_segment);
 
     // Release source reader.
     SafeRelease(&demux->pSourceReader);
@@ -646,10 +657,13 @@ static void mfdemux_reload_demux(GstMFDemux *demux, gboolean bSeek)
             if (qwLength == -1) // If still unknown start on event
                 demux->start_task_on_first_segment = TRUE;
         }
+        g_print("JFXMEDIA TEMP mfdemux_reload_demux() after NEXT_SEGMENT length=%llu start_task_on_first_segment=%d\n",
+                qwLength, demux->start_task_on_first_segment);
     }
     else
     {
         demux->start_task_on_first_segment = TRUE;
+        g_print("JFXMEDIA TEMP mfdemux_reload_demux() seek reload waiting for first segment event\n");
     }
 
     demux->is_demux_initialized = FALSE;
@@ -1258,6 +1272,9 @@ static void mfdemux_loop(GstPad * pad)
     GstMFDemux *demux = GST_MFDEMUX(GST_PAD_PARENT(pad));
     GstFlowReturn result = GST_FLOW_OK;
 
+    g_print("JFXMEDIA TEMP mfdemux_loop() enter is_demux_initialized=%d src_result=%d is_eos=%d\n",
+            demux->is_demux_initialized, demux->src_result, demux->is_eos);
+
     if (!demux->is_demux_initialized)
     {
         GST_PAD_STREAM_UNLOCK(pad);
@@ -1305,6 +1322,8 @@ static void mfdemux_loop(GstPad * pad)
                                                 &dwStreamFlags,
                                                 &llTimestamp,
                                                 &pSample);
+    g_print("JFXMEDIA TEMP mfdemux_loop() ReadSample hr=0x%X streamIndex=%lu flags=0x%X ts=%lld sample=%p\n",
+            hr, dwActualStreamIndex, dwStreamFlags, llTimestamp, pSample);
     GST_PAD_STREAM_LOCK(pad);
     if (hr == S_OK)
     {
