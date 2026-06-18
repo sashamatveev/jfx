@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2024, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -331,7 +331,7 @@ public class AnchorPane extends Pane {
                 childWidth = computeChildWidth(child, getSnappedLeftAnchor(child), getSnappedRightAnchor(child), contentWidth, -1);
             }
             max = Math.max(max, top + (minimum && topAnchor != null && bottomAnchor != null?
-                    child.minHeight(childWidth) : computeChildPrefAreaHeight(child, -1, null, childWidth)) + bottom);
+                    child.minHeight(childWidth) : computeChildPrefAreaHeight(child, -1, null, childWidth, true)) + bottom);
         }
 
         return snappedTopInset() + max + snappedBottomInset();
@@ -348,7 +348,7 @@ public class AnchorPane extends Pane {
         if (topAnchor != null && bottomAnchor != null && child.isResizable()) {
             return areaHeight - snappedTopInset() - snappedBottomInset() - topAnchor - bottomAnchor;
         }
-        return computeChildPrefAreaHeight(child, -1, Insets.EMPTY, width);
+        return computeChildPrefAreaHeight(child, -1, Insets.EMPTY, width, true);
     }
 
     @Override protected void layoutChildren() {

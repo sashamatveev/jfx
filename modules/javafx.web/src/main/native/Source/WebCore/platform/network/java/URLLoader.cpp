@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2024, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -237,7 +237,7 @@ JLObjectArray URLLoader::toJava(const FormData* formData)
                         (jbyteArray) byteArray,
                         (jsize) 0,
                         (jsize) data.size(),
-                        (const jbyte*) data.data());
+                        (const jbyte*) data.span().data());
                 resultElement = env->CallStaticObjectMethod(
                         formDataElementClass,
                         createFromByteArrayMethod,
@@ -434,12 +434,13 @@ static WebCore::ResourceResponse setupResponse(JNIEnv* env,
     }
 
     URL kurl = URL(URL(), String(env, url));
-    response.setURL(kurl);
 
     // Setup mime type for local resources
     if (/*kurl.hasPath()*/kurl.pathEnd() != kurl.pathStart() && kurl.protocol() == String("file"_s)) {
         response.setMimeType(MIMETypeRegistry::mimeTypeForPath(kurl.path().toString()));
     }
+    // set response after protocol check
+    response.setURL(WTFMove(kurl));
     return response;
 }
 
@@ -507,7 +508,7 @@ JNIEXPORT void JNICALL Java_com_sun_webkit_network_URLLoaderBase_twkDidReceiveDa
     ASSERT(target);
     const uint8_t* address =
             static_cast<const uint8_t*>(env->GetDirectBufferAddress(byteBuffer));
-    Ref<FragmentedSharedBuffer> tmp_buf = FragmentedSharedBuffer::create(std::span<const uint8_t>(address, remaining));
+    Ref<SharedBuffer> tmp_buf = SharedBuffer::create(std::span<const uint8_t>(address, remaining));
     target->didReceiveData(tmp_buf->makeContiguous().ptr() + position, remaining);
     //target->didReceiveData((SharedBuffer*)(address) + position, remaining);
 }

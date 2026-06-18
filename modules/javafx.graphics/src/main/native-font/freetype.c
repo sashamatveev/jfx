@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -520,7 +520,7 @@ static PathData* checkSize(void* user, int coordCount)
         if (info->lenCoords > SIZE_MAX - DEFAULT_LEN_COORDS) goto fail;
         info->lenCoords += DEFAULT_LEN_COORDS;
 
-        jbyte* newPointCoords = (jfloat*)realloc(info->pointCoords, info->lenCoords * sizeof(jfloat));
+        jfloat* newPointCoords = (jfloat*)realloc(info->pointCoords, info->lenCoords * sizeof(jfloat));
         if (newPointCoords == NULL) goto fail;
         info->pointCoords = newPointCoords;
     }
@@ -618,7 +618,10 @@ JNIEXPORT jobject JNICALL OS_NATIVE(FT_1Outline_1Decompose)
     data.pointTypes = (jbyte*)malloc(sizeof(jbyte) * DEFAULT_LEN_TYPES);
     data.numTypes = 0;
     data.lenTypes = DEFAULT_LEN_TYPES;
-    if (data.pointTypes == NULL) goto fail;
+    if (data.pointTypes == NULL) {
+        data.pointCoords = NULL;
+        goto fail;
+    }
 
     data.pointCoords = (jfloat*)malloc(sizeof(jfloat) * DEFAULT_LEN_COORDS);
     data.numCoords = 0;

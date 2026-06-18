@@ -35,10 +35,12 @@ namespace Wasm {
 
 #define FOR_EACH_EXCEPTION(macro) \
     macro(OutOfBoundsMemoryAccess,  "Out of bounds memory access"_s) \
+    macro(UnalignedMemoryAccess, "Unaligned memory access"_s) \
     macro(OutOfBoundsTableAccess, "Out of bounds table access"_s) \
     macro(OutOfBoundsCallIndirect, "Out of bounds call_indirect"_s) \
     macro(NullTableEntry,  "call_indirect to a null table entry"_s) \
     macro(NullReference,  "call_ref to a null reference"_s) \
+    macro(NullExnReference,  "throw_ref on a null reference"_s) \
     macro(NullI31Get, "i31.get_<sx> to a null reference"_s) \
     macro(BadSignature, "call_indirect to a signature that does not match"_s) \
     macro(OutOfBoundsTrunc, "Out of bounds Trunc operation"_s) \
@@ -66,8 +68,9 @@ namespace Wasm {
     macro(NullArrayInitData, "array.init_data to a null reference"_s) \
     macro(NullStructGet, "struct.get to a null reference"_s) \
     macro(NullStructSet, "struct.set to a null reference"_s) \
-    macro(TypeErrorInvalidV128Use, "an exported wasm function cannot contain a v128 parameter or return value"_s) \
+    macro(TypeErrorInvalidValueUse, "an exported wasm function cannot contain an invalid parameter or return value"_s) \
     macro(TypeErrorV128TagAccessInJS, "a v128 parameter of a tag may not be accessed from JS"_s) \
+    macro(TypeErrorUnexpectedNullReference, "Host function incorrectly returned null for a nonnullable reference type"_s) \
     macro(NullRefAsNonNull, "ref.as_non_null to a null reference"_s) \
     macro(CastFailure, "ref.cast failed to cast reference to target heap type"_s) \
     macro(OutOfBoundsDataSegmentAccess, "Offset + array length would exceed the size of a data segment"_s) \
@@ -101,12 +104,14 @@ ALWAYS_INLINE bool isTypeErrorExceptionType(ExceptionType type)
 {
     switch (type) {
     case ExceptionType::OutOfBoundsMemoryAccess:
+    case ExceptionType::UnalignedMemoryAccess:
     case ExceptionType::OutOfBoundsTableAccess:
     case ExceptionType::OutOfBoundsDataSegmentAccess:
     case ExceptionType::OutOfBoundsElementSegmentAccess:
     case ExceptionType::OutOfBoundsCallIndirect:
     case ExceptionType::NullTableEntry:
     case ExceptionType::NullReference:
+    case ExceptionType::NullExnReference:
     case ExceptionType::NullI31Get:
     case ExceptionType::BadSignature:
     case ExceptionType::OutOfBoundsTrunc:
@@ -138,8 +143,9 @@ ALWAYS_INLINE bool isTypeErrorExceptionType(ExceptionType type)
     case ExceptionType::OutOfMemory:
         return false;
     case ExceptionType::InvalidGCTypeUse:
-    case ExceptionType::TypeErrorInvalidV128Use:
+    case ExceptionType::TypeErrorInvalidValueUse:
     case ExceptionType::TypeErrorV128TagAccessInJS:
+    case ExceptionType::TypeErrorUnexpectedNullReference:
         return true;
     }
     return false;

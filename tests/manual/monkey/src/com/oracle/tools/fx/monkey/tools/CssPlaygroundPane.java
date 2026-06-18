@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, 2024, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2023, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -26,6 +26,7 @@ package com.oracle.tools.fx.monkey.tools;
 
 import java.nio.charset.Charset;
 import java.util.Base64;
+import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -33,11 +34,14 @@ import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.ColorPicker;
 import javafx.scene.control.Label;
+import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.paint.Color;
 import javafx.stage.Window;
+import javafx.util.Subscription;
 import com.oracle.tools.fx.monkey.util.FX;
 
 /**
@@ -46,7 +50,8 @@ import com.oracle.tools.fx.monkey.util.FX;
 public class CssPlaygroundPane extends BorderPane {
     private final ColorPicker colorPicker;
     private final TextArea cssField;
-    private static String oldStylesheet;
+    private static String customStylesheet;
+    private static String quickStylesheet;
     private int fontSize = 12;
     private static final int[] SIZES = {
         7,
@@ -63,6 +68,8 @@ public class CssPlaygroundPane extends BorderPane {
         22
     };
     private final Label fontSizeLabel;
+    private ListChangeListener<Window> monitor;
+    private Subscription sub;
 
     public CssPlaygroundPane() {
         cssField = new TextArea();
@@ -82,6 +89,7 @@ public class CssPlaygroundPane extends BorderPane {
         fs.setRight(fsLarger);
 
         Button updateButton = FX.button("Update", this::update);
+        Button resetButton = FX.button("Reset", this::reset);
 
         GridPane p = new GridPane();
         p.setPadding(new Insets(10));
@@ -93,22 +101,65 @@ public class CssPlaygroundPane extends BorderPane {
         r++;
         p.add(new Label("Font Size:"), 0, r);
         p.add(fs, 1, r);
-        r++;
-        p.add(new Label("Custom CSS:"), 0, r);
-        p.add(updateButton, 1, r);
 
-        setTop(p);
-        setCenter(cssField);
+        BorderPane cssPane = new BorderPane(cssField);
+        cssPane.setBottom(FX.buttonBar(resetButton, null, updateButton));
+        cssPane.setPadding(new Insets(2));
+
+        TabPane tp = new TabPane();
+        tp.getTabs().setAll(
+            new Tab("Custom CSS", cssPane),
+            new Tab("Quick", p)
+            );
+
+        setCenter(tp);
 
         colorPicker.setOnAction((ev) -> {
-            update();
+            updateQuick();
         });
+
+        // there should be a better way to learn if the node is being displayed
+        sub = sceneProperty().
+            flatMap(Scene::windowProperty).
+            flatMap(Window::showingProperty).
+            subscribe((v) -> {
+                updateListeners(v);
+            });
+    }
+
+    private void updateListeners(Boolean on) {
+        if (Boolean.TRUE.equals(on)) {
+            if (monitor == null) {
+                monitor = new ListChangeListener<Window>() {
+                    @Override
+                    public void onChanged(Change<? extends Window> ch) {
+                        while (ch.next()) {
+                            if (ch.wasRemoved()) {
+                                for (Window w: ch.getRemoved()) {
+                                    removeStylesheets(w);
+                                }
+                            } else if (ch.wasAdded()) {
+                                for (Window w: ch.getAddedSubList()) {
+                                    addStylesheets(w);
+                                }
+                            }
+                        }
+                    }
+                };
+                Window.getWindows().addListener(monitor);
+            }
+        } else {
+            if (monitor != null) {
+                Window.getWindows().removeListener(monitor);
+                monitor = null;
+            }
+        }
     }
 
     private void fontSize(boolean larger) {
         fontSize = nextFontSize(larger);
         fontSizeLabel.setText(String.valueOf(fontSize));
-        update();
+        updateQuick();
     }
 
     private int nextFontSize(boolean larger) {
@@ -136,20 +187,20 @@ public class CssPlaygroundPane extends BorderPane {
     }
 
     private void update() {
+        String css = cssField.getText();
+        applyStyleSheet(css, false);
+    }
+
+    private void updateQuick() {
         Color c = colorPicker.getValue();
         if (c == null) {
             c = Color.WHITE;
         }
-
         String css = generate(c);
-        //System.out.println(css); // FIX
-
-        applyStyleSheet(css);
+        applyStyleSheet(css, true);
     }
 
     private String generate(Color bg) {
-        String css = cssField.getText();
-
         StringBuilder sb = new StringBuilder();
         sb.append(".root {\n");
 
@@ -160,9 +211,6 @@ public class CssPlaygroundPane extends BorderPane {
         sb.append("%;\n");
 
         sb.append("}\n");
-
-        sb.append(css);
-        sb.append("\n");
 
         return sb.toString();
     }
@@ -193,20 +241,65 @@ public class CssPlaygroundPane extends BorderPane {
         return "data:text/css;base64," + Base64.getEncoder().encodeToString(b);
     }
 
-    private static void applyStyleSheet(String styleSheet) {
+    private static void applyStyleSheet(String styleSheet, boolean quick) {
         String ss = encode(styleSheet);
         if (ss != null) {
-            for (Window w : Window.getWindows()) {
+            for (Window w: Window.getWindows()) {
                 Scene scene = w.getScene();
                 if (scene != null) {
                     ObservableList<String> sheets = scene.getStylesheets();
-                    if (oldStylesheet != null) {
-                        sheets.remove(oldStylesheet);
+                    if (quick) {
+                        if (quickStylesheet != null) {
+                            sheets.remove(quickStylesheet);
+                        }
+                    } else {
+                        if (customStylesheet != null) {
+                            sheets.remove(customStylesheet);
+                        }
                     }
                     sheets.add(ss);
                 }
             }
         }
-        oldStylesheet = ss;
+
+        if (quick) {
+            quickStylesheet = ss;
+        } else {
+            customStylesheet = ss;
+        }
+    }
+
+    private void reset() {
+        for (Window w: Window.getWindows()) {
+            removeStylesheets(w);
+        }
+        customStylesheet = null;
+        quickStylesheet = null;
+    }
+
+    private void removeStylesheets(Window w) {
+        Scene scene = w.getScene();
+        if (scene != null) {
+            ObservableList<String> sheets = scene.getStylesheets();
+            if (customStylesheet != null) {
+                sheets.remove(customStylesheet);
+            }
+            if (quickStylesheet != null) {
+                sheets.remove(quickStylesheet);
+            }
+        }
+    }
+
+    private void addStylesheets(Window w) {
+        Scene scene = w.getScene();
+        if (scene != null) {
+            ObservableList<String> sheets = scene.getStylesheets();
+            if (customStylesheet != null) {
+                sheets.add(customStylesheet);
+            }
+            if (quickStylesheet != null) {
+                sheets.add(quickStylesheet);
+            }
+        }
     }
 }

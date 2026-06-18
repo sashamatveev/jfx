@@ -83,7 +83,8 @@
 
 
 #if PLATFORM(GTK)
-#define GLIB_VERSION_MIN_REQUIRED GLIB_VERSION_2_44
+#define GLIB_VERSION_MIN_REQUIRED GLIB_VERSION_2_56
+#define GLIB_VERSION_MAX_ALLOWED GLIB_VERSION_2_70
 #if USE(GTK4)
 #define GDK_VERSION_MIN_REQUIRED GDK_VERSION_4_0
 #else
@@ -92,7 +93,8 @@
 #endif
 
 #if PLATFORM(WPE)
-#define GLIB_VERSION_MIN_REQUIRED GLIB_VERSION_2_44
+#define GLIB_VERSION_MIN_REQUIRED GLIB_VERSION_2_56
+#define GLIB_VERSION_MAX_ALLOWED GLIB_VERSION_2_70
 #endif
 
 #if USE(SOUP)
@@ -115,6 +117,7 @@
 /* ICU configuration. Some of these match ICU defaults on some platforms, but we would like them consistently set everywhere we build WebKit. */
 #define U_HIDE_DEPRECATED_API 1
 #define U_SHOW_CPLUSPLUS_API 0
+#define U_SHOW_CPLUSPLUS_HEADER_API 0
 #ifdef __cplusplus
 #define UCHAR_TYPE char16_t
 #endif

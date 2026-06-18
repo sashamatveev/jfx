@@ -224,7 +224,8 @@ inline IndexingType indexingTypeForValue(JSValue value)
 // Return an indexing type that can handle all of the elements of both indexing types.
 IndexingType leastUpperBoundOfIndexingTypes(IndexingType, IndexingType);
 
-IndexingType leastUpperBoundOfIndexingTypeAndType(IndexingType, SpeculatedType);
+bool isProvenValidTypeForIndexingShapeStorage(IndexingType, SpeculatedType);
+IndexingType leastUpperBoundOfIndexingTypeAndTypeForSpeculation(IndexingType, SpeculatedType);
 IndexingType leastUpperBoundOfIndexingTypeAndValue(IndexingType, JSValue);
 
 void dumpIndexingType(PrintStream&, IndexingType);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -70,7 +70,7 @@ jstring toJavaMessageDigestAlgorithm(CryptoDigest::Algorithm algorithm)
         case CryptoDigest::Algorithm::SHA_1:
             algorithmStr = "SHA-1";
             break;
-        case CryptoDigest::Algorithm::SHA_224:
+        case CryptoDigest::Algorithm::DEPRECATED_SHA_224:
             algorithmStr = "SHA-224";
             break;
         case CryptoDigest::Algorithm::SHA_256:

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -402,6 +402,14 @@ HRESULT PopMemory(
                 //ASCII file names aren't supported
                 //as well as corrupted format
                 cdata = 0;
+            }
+        } else if (CF_UNICODETEXT == cf){
+            for (int i = 0; i < cdata - 1; i += 2) {
+                jbyte *pos = me.getMem() + i;
+                if (*(pos) == 0 && *(pos + 1) == 0) {
+                    cdata = i;
+                    break;
+                }
             }
         }
         if (0 != cdata) {

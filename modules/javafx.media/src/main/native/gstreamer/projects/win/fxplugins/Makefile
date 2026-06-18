@@ -81,6 +81,7 @@ INCLUDES =  $(addprefix -I$(SRCBASE_DIR)/,$(DIRLIST)) \
 
 CFLAGS =   -DWIN32 \
            -D_WINDOWS \
+           -D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR \
            -D_USRDLL \
            -DENABLE_PULL_MODE=1 \
            -DENABLE_SOURCE_SEEKING=1 \
@@ -91,7 +92,6 @@ CFLAGS =   -DWIN32 \
            -DGST_DISABLE_LOADSAVE \
            -DG_DISABLE_DEPRECATED \
            -DG_DISABLE_ASSERT \
-           -DG_DISABLE_CHECKS \
            -D_WINDLL \
            -D_MBCS \
            -DINITGUID \

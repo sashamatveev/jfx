@@ -30,6 +30,7 @@
 
 #include <wtf/FastMalloc.h>
 #include <wtf/JSONValues.h>
+#include <wtf/Seconds.h>
 #include <wtf/text/WTFString.h>
 
 #include <cmath>
@@ -42,7 +43,7 @@ namespace WTF {
 class PrintStream;
 
 class WTF_EXPORT_PRIVATE MediaTime final {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_DEPRECATED_MAKE_FAST_ALLOCATED(MediaTime);
 public:
     enum {
         Valid = 1 << 0,
@@ -61,9 +62,11 @@ public:
     static MediaTime createWithFloat(float floatTime, uint32_t timeScale);
     static MediaTime createWithDouble(double doubleTime);
     static MediaTime createWithDouble(double doubleTime, uint32_t timeScale);
+    static MediaTime createWithSeconds(Seconds seconds) { return createWithDouble(seconds.value()); }
 
     float toFloat() const;
     double toDouble() const;
+    int64_t toMicroseconds() const;
 
     MediaTime& operator=(const MediaTime&) = default;
     MediaTime& operator+=(const MediaTime& rhs) { return *this = *this + rhs; }
@@ -72,21 +75,11 @@ public:
     MediaTime operator-(const MediaTime& rhs) const;
     MediaTime operator-() const;
     MediaTime operator*(int32_t) const;
-    bool operator<(const MediaTime& rhs) const { return compare(rhs) == LessThan; }
-    bool operator>(const MediaTime& rhs) const { return compare(rhs) == GreaterThan; }
-    bool operator==(const MediaTime& rhs) const { return compare(rhs) == EqualTo; }
-    bool operator>=(const MediaTime& rhs) const { return compare(rhs) >= EqualTo; }
-    bool operator<=(const MediaTime& rhs) const { return compare(rhs) <= EqualTo; }
     bool operator!() const;
     explicit operator bool() const;
 
-    typedef enum {
-        LessThan = -1,
-        EqualTo = 0,
-        GreaterThan = 1,
-    } ComparisonFlags;
-
-    ComparisonFlags compare(const MediaTime& rhs) const;
+    WTF_EXPORT_PRIVATE friend std::weak_ordering operator<=>(const MediaTime&, const MediaTime&);
+    friend bool operator==(const MediaTime& a, const MediaTime& b) { return is_eq(a <=> b); }
     bool isBetween(const MediaTime&, const MediaTime&) const;
 
     bool isValid() const { return m_timeFlags & Valid; }
@@ -133,6 +126,7 @@ public:
     };
 
     MediaTime toTimeScale(uint32_t, RoundingFlags = RoundingFlags::HalfAwayFromZero) const;
+    MediaTime isolatedCopy() const;
 
 private:
     void setTimeScale(uint32_t, RoundingFlags = RoundingFlags::HalfAwayFromZero);
@@ -178,7 +172,7 @@ inline MediaTime operator*(int32_t lhs, const MediaTime& rhs) { return rhs.opera
 WTF_EXPORT_PRIVATE extern MediaTime abs(const MediaTime& rhs);
 
 struct WTF_EXPORT_PRIVATE MediaTimeRange {
-    WTF_MAKE_STRUCT_FAST_ALLOCATED;
+    WTF_DEPRECATED_MAKE_STRUCT_FAST_ALLOCATED(MediaTimeRange);
 
     String toJSONString() const;
 

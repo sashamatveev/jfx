@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2024, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -45,6 +45,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import com.sun.javafx.PlatformUtil;
@@ -93,6 +94,7 @@ public class MenuDoubleShortcutTest {
     //
     // https://bugs.openjdk.org/browse/JDK-8087863
     // https://bugs.openjdk.org/browse/JDK-8088897
+    @Disabled("JDK-8368074")
     @Test
     void macSceneComesBeforeMenuBar() {
         Assumptions.assumeTrue(PlatformUtil.isMac());
@@ -104,6 +106,7 @@ public class MenuDoubleShortcutTest {
 
     // On platforms other than Mac the menu bar should process the event
     // and the scene should not.
+    @Disabled("JDK-8368074")
     @Test
     void nonMacMenuBarComesBeforeScene() {
         Assumptions.assumeFalse(PlatformUtil.isMac());
@@ -115,6 +118,7 @@ public class MenuDoubleShortcutTest {
 
     @Test
     void acceleratorOnlyInMenuBar() {
+        Util.sleep(delayMilliseconds);
         testApp.testKey(menuBarOnlyKeyCode);
         Util.sleep(delayMilliseconds);
         TestResult result = testApp.testResult();
@@ -197,6 +201,7 @@ public class MenuDoubleShortcutTest {
         public void testKey(KeyCode code) {
             sceneAcceleratorFired = false;
             menuBarItemFired = false;
+            CountDownLatch testKeyLatch = new CountDownLatch(1);
             Platform.runLater(() -> {
                 KeyCode shortcutCode = (PlatformUtil.isMac() ? KeyCode.COMMAND : KeyCode.CONTROL);
                 Robot robot = new Robot();
@@ -204,7 +209,9 @@ public class MenuDoubleShortcutTest {
                 robot.keyPress(code);
                 robot.keyRelease(code);
                 robot.keyRelease(shortcutCode);
+                testKeyLatch.countDown();
             });
+            Util.waitForLatch(testKeyLatch, 5, "Timeout waiting for testKey execution.");
         }
 
         public TestResult testResult() {
