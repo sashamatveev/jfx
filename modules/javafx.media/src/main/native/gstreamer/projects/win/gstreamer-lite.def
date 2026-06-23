@@ -157,3 +157,4 @@ gst_video_alignment_reset	@155	NONAME
 gst_structure_get_int64	@156	NONAME
 gst_event_get_structure	@157	NONAME
 gst_pad_pull_range	@158	NONAME
+gst_caps_to_string	@159	NONAME

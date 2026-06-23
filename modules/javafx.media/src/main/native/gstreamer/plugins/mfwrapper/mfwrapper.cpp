@@ -33,13 +33,13 @@
 #include <stdio.h>
 
 #include "mfwrapper.h"
+#include "mftrace.h"
 
 #include <mfidl.h>
 #include <Wmcodecdsp.h>
 
 #include "fxplugins_common.h"
 
-#define PTS_DEBUG 0
 #define MEDIA_FORMAT_DEBUG 0
 
 // 3 buffers is enough for rendering. During testing 2 buffers is actually
@@ -1272,13 +1272,14 @@ static GstFlowReturn mfwrapper_deliver_sample(GstMFWrapper *decoder,
         return GST_FLOW_ERROR;
 
     hr = pSample->GetSampleTime(&llTimestamp);
-    GST_BUFFER_TIMESTAMP(pGstBuffer) = llTimestamp * 100;
-
     if (SUCCEEDED(hr))
-    {
-        hr = pSample->GetSampleDuration(&llDuration);
+        GST_BUFFER_TIMESTAMP(pGstBuffer) = llTimestamp * 100;
+    else
+        g_print("AMTEMP Failed to get PTS in mfwrapper_deliver_sample()\n");
+
+    hr = pSample->GetSampleDuration(&llDuration);
+    if (SUCCEEDED(hr))
         GST_BUFFER_DURATION(pGstBuffer) = llDuration * 100;
-    }
 
     if (SUCCEEDED(hr) && decoder->is_force_output_discontinuity)
     {
@@ -1287,14 +1288,11 @@ static GstFlowReturn mfwrapper_deliver_sample(GstMFWrapper *decoder,
         decoder->is_force_output_discontinuity = FALSE;
     }
 
-#if PTS_DEBUG
-    if (GST_BUFFER_TIMESTAMP_IS_VALID(pGstBuffer) && GST_BUFFER_DURATION_IS_VALID(pGstBuffer))
-        g_print("JFXMEDIA H265 %I64u %I64u\n", GST_BUFFER_TIMESTAMP(pGstBuffer), GST_BUFFER_DURATION(pGstBuffer));
-    else if (GST_BUFFER_TIMESTAMP_IS_VALID(pGstBuffer) && !GST_BUFFER_DURATION_IS_VALID(pGstBuffer))
-        g_print("JFXMEDIA H265 %I64u -1\n", GST_BUFFER_TIMESTAMP(pGstBuffer));
-    else
-        g_print("JFXMEDIA H265 -1\n");
-#endif
+    TRACE(DEMUX_OUTPUT_PTS, "PTS H.265 OUT pad=%s pts=%lld dur=%lld discont=%d\n",
+          GST_PAD_NAME(decoder->srcpad),
+          GST_BUFFER_TIMESTAMP_IS_VALID(pGstBuffer) ? GST_BUFFER_TIMESTAMP(pGstBuffer) : -1,
+          GST_BUFFER_DURATION_IS_VALID(pGstBuffer) ? GST_BUFFER_DURATION(pGstBuffer) : -1,
+          GST_BUFFER_FLAG_IS_SET(pGstBuffer, GST_BUFFER_FLAG_DISCONT));
 
     return gst_pad_push(decoder->srcpad, pGstBuffer);
 }
@@ -1377,6 +1375,12 @@ static gint mfwrapper_process_output(GstMFWrapper *decoder)
 static GstFlowReturn mfwrapper_chain(GstPad *pad, GstObject *parent, GstBuffer *buf)
 {
     GstMFWrapper *decoder = GST_MFWRAPPER(parent);
+
+    TRACE(DECODER_INPUT_PTS, "PTS H.265 IN pad=%s pts=%lld dur=%lld discont=%d\n",
+          GST_PAD_NAME(pad),
+          GST_BUFFER_TIMESTAMP_IS_VALID(buf) ? GST_BUFFER_TIMESTAMP(buf) : -1,
+          GST_BUFFER_DURATION_IS_VALID(buf) ? GST_BUFFER_DURATION(buf) : -1,
+          GST_BUFFER_FLAG_IS_SET(buf, GST_BUFFER_FLAG_DISCONT));
 
     if (decoder->is_flushing || decoder->is_eos_received || decoder->is_decoder_error)
     {
@@ -1531,6 +1535,7 @@ static gboolean mfwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent *e
     {
     case GST_EVENT_SEGMENT:
     {
+        TRACE(DECODER_SINK_EVENTS, "GST_EVENT_SEGMENT\n");
         decoder->is_force_discontinuity = TRUE;
         ret = mfwrapper_push_sink_event(decoder, event);
         decoder->is_eos_received = FALSE;
@@ -1539,6 +1544,7 @@ static gboolean mfwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent *e
     break;
     case GST_EVENT_FLUSH_START:
     {
+        TRACE(DECODER_SINK_EVENTS, "GST_EVENT_FLUSH_START\n");
         decoder->is_flushing = TRUE;
 
         ret = mfwrapper_push_sink_event(decoder, event);
@@ -1546,17 +1552,10 @@ static gboolean mfwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent *e
     break;
     case GST_EVENT_FLUSH_STOP:
     {
+        TRACE(DECODER_SINK_EVENTS, "GST_EVENT_FLUSH_STOP\n");
         if (decoder->pDecoder && !decoder->is_decoder_error)
         {
-            if (!mfwrapper_reload_decoder(decoder))
-            {
-                decoder->is_decoder_error = TRUE;
-                gst_element_message_full(GST_ELEMENT(decoder), GST_MESSAGE_ERROR,
-                        GST_STREAM_ERROR, GST_STREAM_ERROR_DECODE,
-                        g_strdup("Failed to reload decoder"), NULL,
-                        ("mfwrapper.c"), ("mfwrapper_sink_event"), 0);
-            }
-            else
+            if (mfwrapper_reload_decoder(decoder))
             {
                 for (int i = 0; i < MAX_COLOR_CONVERT; i++)
                 {
@@ -1566,6 +1565,15 @@ static gboolean mfwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent *e
                                 ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
                     }
                 }
+            }
+            else
+            {
+                decoder->is_decoder_error = TRUE;
+                gst_element_message_full(GST_ELEMENT(decoder), GST_MESSAGE_ERROR,
+                        GST_STREAM_ERROR, GST_STREAM_ERROR_DECODE,
+                        g_strdup("Failed to reload decoder"), NULL,
+                        ("mfwrapper.c"), ("mfwrapper_sink_event"), 0);
+
             }
         }
 
@@ -1578,6 +1586,7 @@ static gboolean mfwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent *e
     break;
     case GST_EVENT_EOS:
     {
+        TRACE(DECODER_SINK_EVENTS, "GST_EVENT_EOS\n");
         decoder->is_eos_received = TRUE;
 
         mfwrapper_drain_output(decoder);
@@ -1590,9 +1599,14 @@ static gboolean mfwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent *e
     break;
     case GST_EVENT_CAPS:
     {
-        GstCaps *caps;
-
+        GstCaps *caps = NULL;
         gst_event_parse_caps(event, &caps);
+
+#if TRACE_ENABLE
+        gchar *caps_str = gst_caps_to_string(caps);
+        TRACE(DECODER_SINK_EVENTS, "GST_EVENT_CAPS: %s\n", caps_str);
+        g_free(caps_str);
+#endif
 
         if (decoder->pDecoder && !decoder->is_decoder_error)
         {
@@ -1622,6 +1636,7 @@ static gboolean mfwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent *e
     }
     break;
     default:
+        TRACE(DECODER_SINK_EVENTS, "Received pass-thru event\n");
         ret = mfwrapper_push_sink_event(decoder, event);
         break;
     }
