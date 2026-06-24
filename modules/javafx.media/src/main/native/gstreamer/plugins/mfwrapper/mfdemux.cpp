@@ -312,8 +312,8 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     {
     case GST_EVENT_SEGMENT:
     {
-        TRACE(DEMUX_SINK_EVENTS, "GST_EVENT_SEGMENT eos=%d force_discontinuity=%d\n",
-              demux->is_eos, demux->force_discontinuity);
+        TRACE(DEMUX_SINK_EVENTS, "GST_EVENT_SEGMENT\n");
+
         demux->force_discontinuity = TRUE;
         demux->is_eos = FALSE;
 
@@ -342,6 +342,8 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     break;
     case GST_EVENT_FLUSH_START:
     {
+        TRACE(DEMUX_SINK_EVENTS, "GST_EVENT_FLUSH_START\n");
+
         // INLINE - gst_event_unref()
         gst_event_unref(event);
         ret = TRUE;
@@ -349,6 +351,8 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     break;
     case GST_EVENT_FLUSH_STOP:
     {
+        TRACE(DEMUX_SINK_EVENTS, "GST_EVENT_FLUSH_STOP\n");
+
         // INLINE - gst_event_unref()
         gst_event_unref(event);
         ret = TRUE;
@@ -357,6 +361,7 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     case GST_EVENT_EOS:
     {
         TRACE(DEMUX_SINK_EVENTS, "GST_EVENT_EOS\n");
+
         demux->is_eos = TRUE;
 
         if (demux->pGSTMFByteStream)
@@ -369,25 +374,15 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     break;
     case GST_EVENT_CAPS:
     {
-        GstStructure *s = NULL;
-        const gchar *mimetype = NULL;
-        GstCaps *caps = NULL;
-
-        gst_event_parse_caps(event, &caps);
-        if (caps != NULL)
+#if TRACE_ENABLE
         {
-            s = gst_caps_get_structure (caps, 0);
-            if (s != NULL)
-            {
-                mimetype = gst_structure_get_name (s);
-                if (mimetype != NULL)
-                {
-                    TRACE(DEMUX_SINK_EVENTS, "GST_EVENT_CAPS %s\n",
-                        mimetype);
-                }
-            }
+            GstCaps *caps = NULL;
+            gst_event_parse_caps(event, &caps);
+            gchar *caps_str = gst_caps_to_string(caps);
+            TRACE(DECODER_SINK_EVENTS, "GST_EVENT_CAPS: %s\n", caps_str);
+            g_free(caps_str);
         }
-
+#endif
         // INLINE - gst_event_unref()
         gst_event_unref(event);
         ret = TRUE;
@@ -440,6 +435,7 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     }
     break;
     default:
+        TRACE(DEMUX_SINK_EVENTS, "Received pass-thru event\n");
         ret = mfdemux_push_sink_event(demux, event);
         break;
     }
@@ -827,7 +823,7 @@ static gboolean mfdemux_configure_audio_stream(GstMFDemux *demux, gboolean *hasA
 {
     HRESULT hr = S_OK;
     IMFMediaType *pMediaType = NULL;
-    GUID subType;
+    GUID subType = GUID_NULL;
 
     hr = demux->pSourceReader->
         SetStreamSelection((DWORD)MF_SOURCE_READER_FIRST_AUDIO_STREAM, TRUE);
@@ -848,9 +844,9 @@ static gboolean mfdemux_configure_audio_stream(GstMFDemux *demux, gboolean *hasA
     if (SUCCEEDED(hr))
         hr = pMediaType->GetGUID(MF_MT_SUBTYPE, &subType);
 
-    if (IsEqualGUID(subType, MFAudioFormat_AAC)) {
+    if (SUCCEEDED(hr) && IsEqualGUID(subType, MFAudioFormat_AAC)) {
         demux->audioFormat.codecID = JFX_CODEC_ID_AAC;
-    } else {
+    } else if (SUCCEEDED(hr)) {
         // Disable if format is not supported
         hr = demux->pSourceReader->
             SetStreamSelection((DWORD)MF_SOURCE_READER_FIRST_AUDIO_STREAM, FALSE);
@@ -882,7 +878,7 @@ static gboolean mfdemux_configure_audio_stream(GstMFDemux *demux, gboolean *hasA
     {
         demux->audioFormat.codecID = JFX_CODEC_ID_UNKNOWN;
         (*hasAudio) = false;
-        return FALSE;
+        return TRUE;
     }
 
     (*hasAudio) = true;
@@ -961,7 +957,7 @@ static gboolean mfdemux_configure_video_stream(GstMFDemux *demux, gboolean *hasV
 {
     HRESULT hr = S_OK;
     IMFMediaType *pMediaType = NULL;
-    GUID subType;
+    GUID subType = GUID_NULL;
 
     hr = demux->pSourceReader->
         SetStreamSelection((DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, TRUE);
@@ -982,15 +978,15 @@ static gboolean mfdemux_configure_video_stream(GstMFDemux *demux, gboolean *hasV
     if (SUCCEEDED(hr))
         hr = pMediaType->GetGUID(MF_MT_SUBTYPE, &subType);
 
-    if (IsEqualGUID(subType, MFVideoFormat_H264))
+    if (SUCCEEDED(hr) && IsEqualGUID(subType, MFVideoFormat_H264))
     {
         demux->videoFormat.codecID = JFX_CODEC_ID_H264;
     }
-    else if (IsEqualGUID(subType, MFVideoFormat_HEVC))
+    else if (SUCCEEDED(hr) && IsEqualGUID(subType, MFVideoFormat_HEVC))
     {
         demux->videoFormat.codecID = JFX_CODEC_ID_HEVC;
     }
-    else
+    else if (SUCCEEDED(hr))
     {
         // Disable if format is not known
         hr = demux->pSourceReader->
@@ -1013,7 +1009,7 @@ static gboolean mfdemux_configure_video_stream(GstMFDemux *demux, gboolean *hasV
     {
         demux->videoFormat.codecID = JFX_CODEC_ID_UNKNOWN;
         (*hasVideo) = false;
-        return FALSE;
+        return TRUE;
     }
 
     (*hasVideo) = true;

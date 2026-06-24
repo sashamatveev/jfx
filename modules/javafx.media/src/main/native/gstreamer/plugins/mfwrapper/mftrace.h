@@ -33,17 +33,18 @@
 #define TRACE_ENABLE 1
 
 // Enable trace categories
-#define DECODER_SINK_EVENTS 1
-#define DECODER_OUTPUT_PTS 1
-#define DECODER_INPUT_PTS 1
-
+// Decoder (mfwrapper)
+#define DECODER_SINK_EVENTS 0
+#define DECODER_OUTPUT_PTS  0
+#define DECODER_INPUT_PTS   0
+// Demux
 #define DEMUX_SINK_EVENTS   0
 #define DEMUX_SRC_EVENTS    1
 #define DEMUX_RELOAD        1
 #define DEMUX_READ_SAMPLE   1
 #define DEMUX_OUTPUT_PTS    1
 #define DEMUX_SEGMENT_STATE 1
-#define DEMUX_STREAM_CONFIG 0
+#define DEMUX_STREAM_CONFIG 1
 #define DEMUX_TASK          1
 #define DEMUX_ERRORS        1
 

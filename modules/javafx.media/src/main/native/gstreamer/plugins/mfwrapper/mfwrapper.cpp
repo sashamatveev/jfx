@@ -1274,8 +1274,6 @@ static GstFlowReturn mfwrapper_deliver_sample(GstMFWrapper *decoder,
     hr = pSample->GetSampleTime(&llTimestamp);
     if (SUCCEEDED(hr))
         GST_BUFFER_TIMESTAMP(pGstBuffer) = llTimestamp * 100;
-    else
-        g_print("AMTEMP Failed to get PTS in mfwrapper_deliver_sample()\n");
 
     hr = pSample->GetSampleDuration(&llDuration);
     if (SUCCEEDED(hr))
@@ -1288,7 +1286,7 @@ static GstFlowReturn mfwrapper_deliver_sample(GstMFWrapper *decoder,
         decoder->is_force_output_discontinuity = FALSE;
     }
 
-    TRACE(DEMUX_OUTPUT_PTS, "PTS H.265 OUT pad=%s pts=%lld dur=%lld discont=%d\n",
+    TRACE(DECODER_OUTPUT_PTS, "H.265 PTS OUT pad=%s pts=%lld dur=%lld discont=%d\n",
           GST_PAD_NAME(decoder->srcpad),
           GST_BUFFER_TIMESTAMP_IS_VALID(pGstBuffer) ? GST_BUFFER_TIMESTAMP(pGstBuffer) : -1,
           GST_BUFFER_DURATION_IS_VALID(pGstBuffer) ? GST_BUFFER_DURATION(pGstBuffer) : -1,
@@ -1376,7 +1374,7 @@ static GstFlowReturn mfwrapper_chain(GstPad *pad, GstObject *parent, GstBuffer *
 {
     GstMFWrapper *decoder = GST_MFWRAPPER(parent);
 
-    TRACE(DECODER_INPUT_PTS, "PTS H.265 IN pad=%s pts=%lld dur=%lld discont=%d\n",
+    TRACE(DECODER_INPUT_PTS, "H.265 PTS IN pad=%s pts=%lld dur=%lld discont=%d\n",
           GST_PAD_NAME(pad),
           GST_BUFFER_TIMESTAMP_IS_VALID(buf) ? GST_BUFFER_TIMESTAMP(buf) : -1,
           GST_BUFFER_DURATION_IS_VALID(buf) ? GST_BUFFER_DURATION(buf) : -1,
@@ -1603,9 +1601,11 @@ static gboolean mfwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent *e
         gst_event_parse_caps(event, &caps);
 
 #if TRACE_ENABLE
-        gchar *caps_str = gst_caps_to_string(caps);
-        TRACE(DECODER_SINK_EVENTS, "GST_EVENT_CAPS: %s\n", caps_str);
-        g_free(caps_str);
+        {
+            gchar *caps_str = gst_caps_to_string(caps);
+            TRACE(DECODER_SINK_EVENTS, "GST_EVENT_CAPS: %s\n", caps_str);
+            g_free(caps_str);
+        }
 #endif
 
         if (decoder->pDecoder && !decoder->is_decoder_error)
