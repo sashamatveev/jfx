@@ -724,6 +724,9 @@ static gboolean hls_progress_buffer_sink_event(GstPad *pad, GstObject *parent, G
             // In HLS mode javasource will set time to correct position in time unit, even if segment in byte units.
             // Maybe not perfect, but works.
             gst_event_copy_segment (event, &segment);
+            g_print("AMTEMP hls sink GST_EVENT_SEGMENT start=%" G_GINT64_FORMAT " stop=%" G_GINT64_FORMAT " pos=%" G_GINT64_FORMAT " time=%" G_GINT64_FORMAT " send_new_segment=%d read_idx=%d write_idx=%d pull=%d\n",
+                    segment.start, segment.stop, segment.position, segment.time,
+                    element->send_new_segment, element->cache_read_index, element->cache_write_index, element->is_pull_mode);
             // INLINE - gst_event_unref()
             gst_event_unref(event);
             ret = TRUE;
@@ -741,6 +744,8 @@ static gboolean hls_progress_buffer_sink_event(GstPad *pad, GstObject *parent, G
 
                 element->buffer_pts = segment.position;
                 element->send_new_segment = FALSE;
+                g_print("AMTEMP hls push newsegment start=%" G_GINT64_FORMAT " pos=%" G_GINT64_FORMAT " time=%" G_GINT64_FORMAT " buffer_pts=%" G_GUINT64_FORMAT "\n",
+                        new_segment.start, new_segment.position, new_segment.time, element->buffer_pts);
 
                 event = gst_event_new_segment(&new_segment);
                 ret = gst_pad_push_event(element->srcpad, event);
@@ -767,6 +772,8 @@ static gboolean hls_progress_buffer_sink_event(GstPad *pad, GstObject *parent, G
             element->cache_write_ready[element->cache_write_index] = FALSE;
             cache_set_write_position(element->cache[element->cache_write_index], 0);
             cache_set_read_position(element->cache[element->cache_write_index], 0);
+            g_print("AMTEMP hls prepared write segment idx=%d size=%u\n",
+                    element->cache_write_index, element->cache_size[element->cache_write_index]);
 
             g_mutex_unlock(&element->lock);
 
@@ -793,6 +800,8 @@ static gboolean hls_progress_buffer_sink_event(GstPad *pad, GstObject *parent, G
         element->send_new_segment = TRUE;
         element->is_flushing = FALSE;
         element->srcresult = GST_FLOW_OK;
+        g_print("AMTEMP hls GST_EVENT_FLUSH_STOP send_new_segment=%d is_eos=%d linked=%d\n",
+                element->send_new_segment, element->is_eos, gst_pad_is_linked(element->srcpad));
 
         if (!element->is_pull_mode && !element->is_eos && gst_pad_is_linked(element->srcpad))
             gst_pad_start_task(element->srcpad, hls_progress_buffer_loop, element, NULL);
@@ -839,14 +848,25 @@ static gboolean hls_progress_buffer_src_event(GstPad *pad, GstObject *parent, Gs
         if (element->is_pull_mode)
         {
             g_mutex_lock(&element->lock);
+            g_print("AMTEMP hls FX_EVENT_NEXT_SEGMENT before read_idx=%d write_idx=%d ready=%d eos=%d\n",
+                    element->cache_read_index, element->cache_write_index,
+                    element->cache_read_ready[element->cache_read_index], element->is_eos);
             element->cache_write_ready[element->cache_read_index] = TRUE;
             element->cache_read_ready[element->cache_read_index] = FALSE;
             element->cache_read_index = (element->cache_read_index + 1) % NUM_OF_CACHED_SEGMENTS;
 
             if (element->cache_read_ready[element->cache_read_index])
+            {
+                g_print("AMTEMP hls FX_EVENT_NEXT_SEGMENT immediate segment_ready next_read_idx=%d\n",
+                        element->cache_read_index);
                 hls_send_segment_ready_event(element, TRUE);
+            }
             else
+            {
+                g_print("AMTEMP hls FX_EVENT_NEXT_SEGMENT waiting segment_ready next_read_idx=%d\n",
+                        element->cache_read_index);
                 element->send_segment_ready_event = TRUE;
+            }
 
             // Signal EOS if set and nothing to read.
             if (!element->cache_read_ready[element->cache_read_index])

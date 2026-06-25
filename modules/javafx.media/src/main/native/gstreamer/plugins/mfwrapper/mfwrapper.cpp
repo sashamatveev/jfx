@@ -1286,8 +1286,7 @@ static GstFlowReturn mfwrapper_deliver_sample(GstMFWrapper *decoder,
         decoder->is_force_output_discontinuity = FALSE;
     }
 
-    TRACE(DECODER_OUTPUT_PTS, "H.265 PTS OUT pad=%s pts=%lld dur=%lld discont=%d\n",
-          GST_PAD_NAME(decoder->srcpad),
+    TRACE(DECODER_OUTPUT_PTS, "PTS OUT pts=%lld dur=%lld discont=%d\n",
           GST_BUFFER_TIMESTAMP_IS_VALID(pGstBuffer) ? GST_BUFFER_TIMESTAMP(pGstBuffer) : -1,
           GST_BUFFER_DURATION_IS_VALID(pGstBuffer) ? GST_BUFFER_DURATION(pGstBuffer) : -1,
           GST_BUFFER_FLAG_IS_SET(pGstBuffer, GST_BUFFER_FLAG_DISCONT));

@@ -313,6 +313,15 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     case GST_EVENT_SEGMENT:
     {
         TRACE(DEMUX_SINK_EVENTS, "GST_EVENT_SEGMENT\n");
+        {
+            const GstSegment *segment = NULL;
+            gst_event_parse_segment(event, &segment);
+            if (segment != NULL)
+            {
+                g_print("AMTEMP mfdemux sink GST_EVENT_SEGMENT start=%" G_GINT64_FORMAT " stop=%" G_GINT64_FORMAT " pos=%" G_GINT64_FORMAT " time=%" G_GINT64_FORMAT " cached=%p\n",
+                        segment->start, segment->stop, segment->position, segment->time, demux->cached_segment_event);
+            }
+        }
 
         demux->force_discontinuity = TRUE;
         demux->is_eos = FALSE;
@@ -412,6 +421,8 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
         }
 
         TRACE(DEMUX_SINK_EVENTS, "FX_EVENT_SEGMENT_READY size=%lld\n", size);
+        g_print("AMTEMP mfdemux FX_EVENT_SEGMENT_READY size=%" G_GINT64_FORMAT " start_task_on_first_segment=%d reader=%p\n",
+                size, demux->start_task_on_first_segment, demux->pSourceReader);
 
         if (demux->pGSTMFByteStream)
             demux->pGSTMFByteStream->SetStreamLength((QWORD)size);
@@ -491,6 +502,8 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
             // Do not init seek if we in error state. It can happen if
             // critical error occured and we disposing pipeline.
             g_mutex_lock(&demux->lock);
+            TRACE(DEMUX_SRC_EVENTS, "GST_EVENT_SEEK src_result=%d is_hls=%d stream=%p reader=%p\n",
+                    demux->src_result, demux->is_hls, demux->pGSTMFByteStream, demux->pSourceReader);
             if (demux->src_result == GST_FLOW_ERROR ||
                 demux->pGSTMFByteStream == NULL ||
                 (!demux->is_hls && demux->pSourceReader == NULL))
@@ -512,8 +525,10 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
             gst_event_parse_seek (event, &rate, &format, &flags,
                     &start_type, &start, &stop_type, &stop);
             seqnum = gst_event_get_seqnum(event);
-            TRACE(DEMUX_SRC_EVENTS, "SEEK rate=%lf format=%d flags=0x%X start_type=%d start=%lld stop_type=%d stop=%lld is_hls=%d reader=%p\n",
-                  rate, format, flags, start_type, start, stop_type, stop, demux->is_hls, demux->pSourceReader);
+
+            TRACE(DEMUX_SRC_EVENTS, "GST_EVENT_SEEK rate=%lf format=%d flags=0x%X start_type=%d start=%lld stop_type=%d stop=%lld is_hls=%d\n",
+                    rate, format, flags, start_type, start, stop_type, stop, demux->is_hls);
+
             if (format == GST_FORMAT_TIME)
             {
                 if (flags & GST_SEEK_FLAG_FLUSH)
@@ -522,7 +537,6 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                     gst_event_set_seqnum(e, seqnum);
                     // Push event dowstream. We do not flush upstream, since
                     // we working in pull mode.
-                    TRACE(DEMUX_SRC_EVENTS, "SEEK flush_start seqnum=%u\n", seqnum);
                     mfdemux_push_sink_event(demux, e);
                 }
 
@@ -547,11 +561,12 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                 if (demux->is_hls)
                 {
                     // Upstream will handle and unref event
-                    TRACE(DEMUX_SRC_EVENTS, "SEEK forwarding upstream for HLS\n");
+                    TRACE(DEMUX_SRC_EVENTS, "GST_EVENT_SEEK forward upstream for HLS\n");
                     ret = gst_pad_push_event(demux->sink_pad, event);
                 }
                 else
                 {
+                    TRACE(DEMUX_SRC_EVENTS, "GST_EVENT_SEEK handle event for MP4\n");
                     demux->rate = rate;
                     demux->seek_position = start;
                     demux->send_new_segment = !demux->is_hls;
@@ -562,7 +577,6 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                     pv.vt = VT_I8;
                     pv.hVal.QuadPart = (LONGLONG)(start / 100);
                     hr = demux->pSourceReader->SetCurrentPosition(GUID_NULL, pv);
-                    TRACE(DEMUX_SRC_EVENTS, "SEEK SetCurrentPosition hr=0x%X start=%lld\n", hr, start);
                     PropVariantClear(&pv);
 
                     // INLINE - gst_event_unref()
@@ -576,7 +590,6 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                 {
                     GstEvent *e = gst_event_new_flush_stop(TRUE);
                     gst_event_set_seqnum(e, seqnum);
-                    TRACE(DEMUX_SRC_EVENTS, "SEEK flush_stop seqnum=%u\n", seqnum);
                     mfdemux_push_sink_event(demux, e);
                 }
 
@@ -590,7 +603,7 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                     if (demux->is_hls)
                     {
                         // For HLS just reload
-                        TRACE(DEMUX_RELOAD, "SEEK triggering HLS reload\n");
+                        TRACE(DEMUX_RELOAD, "Reload on seek for HLS\n");
                         mfdemux_reload_demux(demux, TRUE);
                     }
                     else
@@ -622,11 +635,12 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
 
 static void mfdemux_reload_demux(GstMFDemux *demux, gboolean bSeek)
 {
+    TRACE(DEMUX_RELOAD, "bSeek=%d initialized=%d eos=%d start_task_on_first_segment=%d reader=%p byteSteam %p\n",
+            bSeek, demux->is_demux_initialized, demux->is_eos, demux->start_task_on_first_segment,
+            demux->pSourceReader, demux->pGSTMFByteStream);
+
     if (demux->pGSTMFByteStream == NULL)
         return; // Unlikely
-
-    TRACE(DEMUX_RELOAD, "reload bSeek=%d initialized=%d eos=%d start_task_on_first_segment=%d reader=%p\n",
-          bSeek, demux->is_demux_initialized, demux->is_eos, demux->start_task_on_first_segment, demux->pSourceReader);
 
     // Release source reader.
     SafeRelease(&demux->pSourceReader);
@@ -640,13 +654,16 @@ static void mfdemux_reload_demux(GstMFDemux *demux, gboolean bSeek)
 
     // Set length to -1.
     demux->pGSTMFByteStream->SetStreamLength(-1);
-    TRACE(DEMUX_RELOAD, "reload reset bytestream and clear stream indexes\n");
 
     // Ask HLS for next segment if not seek. Seek will reset HLS buffer, so
     // it will be starting from right segment we need.
-    if (!bSeek)
+    if (bSeek)
     {
-        TRACE(DEMUX_RELOAD, "reload request NEXT_SEGMENT\n");
+        demux->start_task_on_first_segment = TRUE;
+    }
+    else
+    {
+        TRACE(DEMUX_RELOAD, "Sending FX_EVENT_NEXT_SEGMENT\n");
         gst_pad_push_event(demux->sink_pad, gst_event_new_custom(
                                                 static_cast<GstEventType>(FX_EVENT_NEXT_SEGMENT), NULL));
 
@@ -662,17 +679,11 @@ static void mfdemux_reload_demux(GstMFDemux *demux, gboolean bSeek)
             if (qwLength == -1) // If still unknown start on event
                 demux->start_task_on_first_segment = TRUE;
         }
-        TRACE(DEMUX_RELOAD, "reload length=%llu start_task_on_first_segment=%d\n",
-              qwLength, demux->start_task_on_first_segment);
-    }
-    else
-    {
-        demux->start_task_on_first_segment = TRUE;
-        TRACE(DEMUX_RELOAD, "seek reload waiting for first segment event\n");
+        TRACE(DEMUX_RELOAD, "length=%llu\n", qwLength);
     }
 
     demux->is_demux_initialized = FALSE;
-    TRACE(DEMUX_RELOAD, "reload complete initialized=%d\n", demux->is_demux_initialized);
+    TRACE(DEMUX_RELOAD, "Reload completed start_task_on_first_segment=%d\n", demux->start_task_on_first_segment);
 }
 
 static gboolean mfdemux_init_demux(GstMFDemux *demux, GstCaps *caps)
@@ -1147,6 +1158,8 @@ static void mfdemux_send_new_segment(GstMFDemux *demux, GstClockTime position)
 
     TRACE(DEMUX_SEGMENT_STATE, "send new segment start=%lld stop=%lld time=%lld position=%lld duration=%lld rate=%lf\n",
           segment.start, segment.stop, segment.time, segment.position, segment.duration, segment.rate);
+    g_print("AMTEMP mfdemux send_new_segment start=%" G_GINT64_FORMAT " stop=%" G_GINT64_FORMAT " time=%" G_GINT64_FORMAT " pos=%" G_GINT64_FORMAT " dur=%" G_GINT64_FORMAT " rate=%lf\n",
+            segment.start, segment.stop, segment.time, segment.position, segment.duration, segment.rate);
     new_segment = gst_event_new_segment(&segment);
     mfdemux_push_sink_event(demux, new_segment);
 }
@@ -1227,12 +1240,16 @@ static GstFlowReturn mfdemux_deliver_sample(GstMFDemux *demux, GstPad* pad,
     {
         TRACE(DEMUX_SEGMENT_STATE, "send_new_segment pts=%lld\n",
               GST_BUFFER_TIMESTAMP_IS_VALID(pBuffer) ? GST_BUFFER_TIMESTAMP(pBuffer) : -1);
+        g_print("AMTEMP mfdemux send_new_segment pts=%" G_GINT64_FORMAT " pad=%s\n",
+                GST_BUFFER_TIMESTAMP_IS_VALID(pBuffer) ? GST_BUFFER_TIMESTAMP(pBuffer) : -1,
+                GST_PAD_NAME(pad));
         mfdemux_send_new_segment(demux, GST_BUFFER_TIMESTAMP(pBuffer));
         demux->send_new_segment = FALSE;
     }
     else if (demux->cached_segment_event != NULL)
     {
         TRACE(DEMUX_SEGMENT_STATE, "push cached segment event=%p\n", demux->cached_segment_event);
+        g_print("AMTEMP mfdemux push cached segment event=%p\n", demux->cached_segment_event);
         mfdemux_push_sink_event(demux, demux->cached_segment_event);
         demux->cached_segment_event = NULL;
     }
@@ -1242,6 +1259,11 @@ static GstFlowReturn mfdemux_deliver_sample(GstMFDemux *demux, GstPad* pad,
           GST_BUFFER_TIMESTAMP_IS_VALID(pBuffer) ? GST_BUFFER_TIMESTAMP(pBuffer) : -1,
           GST_BUFFER_DURATION_IS_VALID(pBuffer) ? GST_BUFFER_DURATION(pBuffer) : -1,
           GST_BUFFER_FLAG_IS_SET(pBuffer, GST_BUFFER_FLAG_DISCONT));
+    g_print("AMTEMP mfdemux out pad=%s pts=%" G_GINT64_FORMAT " dur=%" G_GINT64_FORMAT " discont=%d\n",
+            GST_PAD_NAME(pad),
+            GST_BUFFER_TIMESTAMP_IS_VALID(pBuffer) ? GST_BUFFER_TIMESTAMP(pBuffer) : -1,
+            GST_BUFFER_DURATION_IS_VALID(pBuffer) ? GST_BUFFER_DURATION(pBuffer) : -1,
+            GST_BUFFER_FLAG_IS_SET(pBuffer, GST_BUFFER_FLAG_DISCONT));
 
     if (SUCCEEDED(hr))
         ret = gst_pad_push(pad, pBuffer);

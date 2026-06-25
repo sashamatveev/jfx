@@ -37,16 +37,18 @@
 #define DECODER_SINK_EVENTS 0
 #define DECODER_OUTPUT_PTS  0
 #define DECODER_INPUT_PTS   0
+
 // Demux
 #define DEMUX_SINK_EVENTS   0
-#define DEMUX_SRC_EVENTS    1
-#define DEMUX_RELOAD        1
-#define DEMUX_READ_SAMPLE   1
-#define DEMUX_OUTPUT_PTS    1
-#define DEMUX_SEGMENT_STATE 1
-#define DEMUX_STREAM_CONFIG 1
-#define DEMUX_TASK          1
-#define DEMUX_ERRORS        1
+#define DEMUX_SRC_EVENTS    0
+#define DEMUX_RELOAD        0
+
+#define DEMUX_READ_SAMPLE   0
+#define DEMUX_OUTPUT_PTS    0
+#define DEMUX_SEGMENT_STATE 0
+#define DEMUX_STREAM_CONFIG 0
+#define DEMUX_TASK          0
+#define DEMUX_ERRORS        0
 
 #if TRACE_ENABLE
 static inline const char *trace_filename(const char *path)

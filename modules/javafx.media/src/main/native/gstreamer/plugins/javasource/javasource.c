@@ -637,6 +637,9 @@ next_event:
                     segment.stop = result;
                     segment.time = element->position_time;
                     segment.position = element->position_time;
+                    g_print("AMTEMP javasource HLS segment start_time=%d start=%" G_GINT64_FORMAT " stop=%d pos_time=%" G_GINT64_FORMAT " position=%" G_GINT64_FORMAT " update=%d discont=%d header=%d element=%p\n",
+                            start_time, segment.start, result, segment.time, segment.position,
+                            element->update, element->discont, element->header, element);
                     new_segment = gst_event_new_segment (&segment);
                 }
                 else
