@@ -330,8 +330,6 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
         {
             gboolean pads_ready = (demux->audio_src_pad != NULL && gst_pad_is_linked(demux->audio_src_pad)) ||
                                   (demux->video_src_pad != NULL && gst_pad_is_linked(demux->video_src_pad));
-            TRACE(DEMUX_SEGMENT_STATE, "cache segment old=%p new=%p pads_ready=%d\n",
-                  demux->cached_segment_event, event, pads_ready);
             if (demux->cached_segment_event != NULL)
                 gst_event_unref(demux->cached_segment_event); // INLINE - gst_event_unref()
 
@@ -418,13 +416,11 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
 
         // Force discontinuity, since it is new stream
         demux->force_discontinuity = TRUE;
-        TRACE(DEMUX_SEGMENT_STATE, "force_discontinuity=TRUE reason=segment_ready start_task_on_first_segment=%d\n",
-              demux->start_task_on_first_segment);
 
         // Start task if needed
         if (demux->start_task_on_first_segment)
         {
-            TRACE(DEMUX_TASK, "start task on first segment ready\n");
+            TRACE(DEMUX_TASK, "Start task on first segment ready\n");
             gst_pad_start_task(pad, (GstTaskFunction) mfdemux_loop, pad, NULL);
             demux->start_task_on_first_segment = FALSE;
         }
@@ -544,7 +540,7 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                 GST_PAD_STREAM_UNLOCK(demux->sink_pad);
 
                 // Wait for streaming thread to exit
-                TRACE(DEMUX_TASK, "pause task due to seek\n");
+                TRACE(DEMUX_TASK, "Pause task due to seek\n");
                 gst_pad_pause_task(demux->sink_pad);
 
                 if (demux->is_hls)
@@ -559,8 +555,6 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                     demux->rate = rate;
                     demux->seek_position = start;
                     demux->send_new_segment = !demux->is_hls;
-                    TRACE(DEMUX_SEGMENT_STATE, "seek_position=%lld rate=%lf send_new_segment=%d\n",
-                          demux->seek_position, demux->rate, demux->send_new_segment);
 
                     PROPVARIANT pv = { 0 };
                     pv.vt = VT_I8;
@@ -598,14 +592,13 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                     else
                     {
                         // Start streaming thread
-                        TRACE(DEMUX_TASK, "restart task after non-HLS seek\n");
+                        TRACE(DEMUX_TASK, "Restart task after non-HLS seek\n");
                         gst_pad_start_task(demux->sink_pad, (GstTaskFunction)mfdemux_loop,
                                            demux->sink_pad, NULL);
                     }
                 }
                 else
                 {
-                    TRACE(DEMUX_ERRORS, "seek failed hr=0x%X\n", hr);
                     gst_element_message_full(GST_ELEMENT(demux), GST_MESSAGE_ERROR,
                             GST_STREAM_ERROR, GST_STREAM_ERROR_DEMUX,
                             g_strdup("mfdemux failed to seek"), NULL,
@@ -685,15 +678,12 @@ static gboolean mfdemux_init_demux(GstMFDemux *demux, GstCaps *caps)
     gint64 data_length = 0;
     if (!gst_pad_peer_query_duration(demux->sink_pad, GST_FORMAT_BYTES, &data_length))
     {
-        TRACE(DEMUX_ERRORS, "peer duration query failed\n");
         return false;
     }
 
     // For HTTP/HTTPS/FILE we need to provide segment. For HLS no need, since
     // hlsprogressbuffer will handle it.
     demux->send_new_segment = !demux->is_hls;
-    TRACE(DEMUX_STREAM_CONFIG, "init_demux data_length=%lld is_hls=%d send_new_segment=%d\n",
-          data_length, demux->is_hls, demux->send_new_segment);
 
     if (demux->pGSTMFByteStream == NULL)
     {
@@ -718,8 +708,6 @@ static gboolean mfdemux_init_demux(GstMFDemux *demux, GstCaps *caps)
         demux->llDuration = (LONGLONG)pv.uhVal.QuadPart;
         PropVariantClear(&pv);
     }
-    TRACE(DEMUX_STREAM_CONFIG, "SourceReader created=%p duration=%lld\n",
-          demux->pSourceReader, demux->llDuration * 100);
 
     // Disable all streams. Disabled streams does not consume memory if not
     // read. MP4 might contain subtitles or additional audio stream and we do
@@ -1145,9 +1133,6 @@ static void mfdemux_send_new_segment(GstMFDemux *demux, GstClockTime position)
     segment.position = position;
     segment.duration = demux->llDuration * 100;
 
-    TRACE(DEMUX_SEGMENT_STATE, "send new segment start=%lld stop=%lld time=%lld position=%lld duration=%lld rate=%lf\n",
-          segment.start, segment.stop, segment.time, segment.position, segment.duration, segment.rate);
-
     new_segment = gst_event_new_segment(&segment);
     mfdemux_push_sink_event(demux, new_segment);
 }
@@ -1226,14 +1211,11 @@ static GstFlowReturn mfdemux_deliver_sample(GstMFDemux *demux, GstPad* pad,
     // Before pushing buffer send new segment if needed
     if (demux->send_new_segment)
     {
-        TRACE(DEMUX_SEGMENT_STATE, "send_new_segment pts=%lld\n",
-              GST_BUFFER_TIMESTAMP_IS_VALID(pBuffer) ? GST_BUFFER_TIMESTAMP(pBuffer) : -1);
         mfdemux_send_new_segment(demux, GST_BUFFER_TIMESTAMP(pBuffer));
         demux->send_new_segment = FALSE;
     }
     else if (demux->cached_segment_event != NULL)
     {
-        TRACE(DEMUX_SEGMENT_STATE, "push cached segment event=%p\n", demux->cached_segment_event);
         mfdemux_push_sink_event(demux, demux->cached_segment_event);
         demux->cached_segment_event = NULL;
     }
@@ -1300,11 +1282,10 @@ static void mfdemux_loop(GstPad * pad)
     if (!demux->is_demux_initialized)
     {
         GST_PAD_STREAM_UNLOCK(pad);
-        TRACE(DEMUX_TASK, "init and configure demux begin\n");
+        TRACE(DEMUX_TASK, "Init and configure demux begin\n");
         if (!mfdemux_init_demux(demux, NULL) ||
             !mfdemux_configure_demux(demux))
         {
-            TRACE(DEMUX_ERRORS, "init/configure failed\n");
             gst_element_message_full(GST_ELEMENT(demux), GST_MESSAGE_ERROR,
                 GST_STREAM_ERROR, GST_STREAM_ERROR_DEMUX,
                 g_strdup("mfdemux init or configure failed"), NULL,
@@ -1312,7 +1293,7 @@ static void mfdemux_loop(GstPad * pad)
             gst_pad_pause_task(pad);
             return;
         }
-        TRACE(DEMUX_TASK, "init and configure demux done\n");
+        TRACE(DEMUX_TASK, "Init and configure demux done\n");
         GST_PAD_STREAM_LOCK(pad);
     }
 
@@ -1355,12 +1336,10 @@ static void mfdemux_loop(GstPad * pad)
             // Before delivering EOS, check if we actually doing reload.
             if (!demux->is_eos && demux->pGSTMFByteStream->IsReload())
             {
-                TRACE(DEMUX_READ_SAMPLE, "EOS flag reload=1 is_eos=%d\n", demux->is_eos);
                 mfdemux_reload_demux(demux, FALSE);
             }
             else
             {
-                TRACE(DEMUX_READ_SAMPLE, "EOS flag deliver downstream\n");
                 // Deliver EOS to all src pads, since source reader reports it for
                 // last read only and not for each stream.
                 mfdemux_push_sink_event(demux, gst_event_new_eos());
@@ -1369,7 +1348,6 @@ static void mfdemux_loop(GstPad * pad)
         }
         else if ((dwStreamFlags & MF_SOURCE_READERF_ERROR) == MF_SOURCE_READERF_ERROR)
         {
-            TRACE(DEMUX_ERRORS, "ReadSample MF_SOURCE_READERF_ERROR\n");
             gst_element_message_full(GST_ELEMENT(demux), GST_MESSAGE_ERROR,
                 GST_STREAM_ERROR, GST_STREAM_ERROR_DEMUX,
                 g_strdup("ReadSample() failed (MF_SOURCE_READERF_ERROR)"), NULL,
@@ -1379,17 +1357,6 @@ static void mfdemux_loop(GstPad * pad)
 
         if (pSample != NULL)
         {
-            #if ENABLE_TRACE
-            {
-                LONGLONG nsSampleTime = 0;
-                DWORD cbTotalLength = 0;
-                pSample->GetSampleTime(&nsSampleTime);
-                pSample->GetTotalLength(&cbTotalLength);
-                TRACE(DEMUX_READ_SAMPLE, "Received sample from reader: nsSampleTime=%lld cbTotalLength=%d\n",
-                    nsSampleTime, cbTotalLength);
-            }
-            #endif // ENABLE_TRACE
-
             GstPad *src_pad = mfdemux_get_src_pad(demux, dwActualStreamIndex);
             if (src_pad != NULL)
                 result = mfdemux_deliver_sample(demux, src_pad, pSample);
@@ -1412,7 +1379,6 @@ static void mfdemux_loop(GstPad * pad)
 
         if (result != GST_FLOW_ERROR)
         {
-            TRACE(DEMUX_ERRORS, "ReadSample failed hr=0x%X src_result=%d\n", hr, result);
             gst_element_message_full(GST_ELEMENT(demux), GST_MESSAGE_ERROR,
                 GST_STREAM_ERROR, GST_STREAM_ERROR_DEMUX,
                 g_strdup_printf("ReadSample() failed (0x%X)", hr), NULL,
@@ -1430,7 +1396,7 @@ static void mfdemux_loop(GstPad * pad)
 
     if (result != GST_FLOW_OK || demux->start_task_on_first_segment)
     {
-        TRACE(DEMUX_TASK, "pause_task result=%d start_task_on_first_segment=%d\n",
+        TRACE(DEMUX_TASK, "Pause task result=%d start_task_on_first_segment=%d\n",
               result, demux->start_task_on_first_segment);
         gst_pad_pause_task(pad);
     }
@@ -1461,13 +1427,13 @@ static gboolean mfdemux_activate_mode(GstPad *pad, GstObject *parent, GstPadMode
 
             if (demux->is_hls)
             {
-                TRACE(DEMUX_TASK, "activate pull is_hls=1 start_on_event=%d\n",
+                TRACE(DEMUX_TASK, "Activate pull for HLS. start_on_event=%d\n",
                       demux->start_task_on_first_segment);
                 res = TRUE;
             }
             else
             {
-                TRACE(DEMUX_TASK, "activate pull is_hls=0 start task now\n");
+                TRACE(DEMUX_TASK, "Activate pull for MP4. Starting task...\n");
                 res = gst_pad_start_task(pad, (GstTaskFunction) mfdemux_loop,
                         pad, NULL);
             }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2025, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -56,7 +56,6 @@ struct _HLSProgressBuffer
     gboolean      cache_write_ready[NUM_OF_CACHED_SEGMENTS];
     gboolean      cache_read_ready[NUM_OF_CACHED_SEGMENTS];
     gboolean      cache_discont[NUM_OF_CACHED_SEGMENTS];
-    gboolean      cache_header[NUM_OF_CACHED_SEGMENTS];
     gint          cache_write_index;
     gint          cache_read_index;
 
@@ -197,7 +196,6 @@ static void hls_progress_buffer_init(HLSProgressBuffer *element)
         element->cache_write_ready[i] = TRUE;
         element->cache_read_ready[i] = FALSE;
         element->cache_discont[i] = FALSE;
-        element->cache_header[i] = FALSE;
     }
 
     element->cache_write_index = -1;
@@ -333,7 +331,6 @@ static void hls_progress_buffer_flush_data(HLSProgressBuffer *element)
     g_cond_signal(&element->del_cond);
 
     element->cache_write_index = -1;
-    //element->cache_read_index = element->is_pull_mode ? -1 : 0;
     element->cache_read_index = 0;
     element->send_segment_ready_event = element->is_pull_mode;
     for (i = 0; i < NUM_OF_CACHED_SEGMENTS; i++)
@@ -375,13 +372,7 @@ static GstFlowReturn hls_progress_buffer_chain(GstPad *pad, GstObject *parent, G
     if (element->srcresult != GST_FLOW_FLUSHING)
     {
         if (GST_BUFFER_FLAG_IS_SET(data, GST_BUFFER_FLAG_DISCONT))
-        {
             element->cache_discont[element->cache_write_index] = TRUE;
-        }
-        if (GST_BUFFER_FLAG_IS_SET(data, GST_BUFFER_FLAG_HEADER))
-        {
-            element->cache_header[element->cache_write_index] = TRUE;
-        }
 
         cache_write_buffer(element->cache[element->cache_write_index], data);
         g_cond_signal(&element->add_cond);
@@ -483,13 +474,6 @@ static void hls_progress_buffer_loop(void *data)
             element->cache_discont[element->cache_read_index] = FALSE;
         }
 
-        if (element->cache_header[element->cache_read_index])
-        {
-            buffer = gst_buffer_make_writable(buffer);
-            GST_BUFFER_FLAG_SET(buffer, GST_BUFFER_FLAG_HEADER);
-            element->cache_header[element->cache_read_index] = FALSE;
-        }
-
         if (read_position == element->cache_size[element->cache_read_index])
         {
             element->cache_write_ready[element->cache_read_index] = TRUE;
@@ -562,27 +546,6 @@ static GstFlowReturn hls_progress_buffer_getrange(GstPad *pad, GstObject *parent
         element->cache_discont[element->cache_read_index] = FALSE;
     }
 
-    // Set flag GST_BUFFER_FLAG_HEADER if needed
-    if (element->cache_header[element->cache_read_index])
-    {
-        if (result == GST_FLOW_OK && (*buffer) != NULL)
-        {
-            (*buffer) = gst_buffer_make_writable((*buffer));
-            GST_BUFFER_FLAG_SET((*buffer), GST_BUFFER_FLAG_HEADER);
-        }
-        element->cache_header[element->cache_read_index] = FALSE;
-    }
-
-    // // Signal EOS if set and nothing to read.
-    // if (!element->cache_read_ready[element->cache_read_index])
-    // {
-    //     if (element->is_eos)
-    //     {
-    //         g_mutex_unlock(&element->lock);
-    //         gst_pad_push_event(element->srcpad, gst_event_new_eos());
-    //         g_mutex_lock(&element->lock);
-    //     }
-    // }
     g_mutex_unlock(&element->lock);
 
     return result;
