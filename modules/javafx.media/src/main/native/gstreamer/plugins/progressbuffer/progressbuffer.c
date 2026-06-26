@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -253,7 +253,12 @@ static void progress_buffer_init(ProgressBuffer *element)
     gst_pad_set_event_function       (element->sinkpad, GST_DEBUG_FUNCPTR(progress_buffer_sink_event));
     gst_element_add_pad (GST_ELEMENT (element), element->sinkpad);
 
-    element->srcpad = NULL;
+    element->srcpad = gst_pad_new_from_template (gst_element_class_get_pad_template (GST_ELEMENT_GET_CLASS(element), "src"), "src");
+    gst_pad_set_activatemode_function  (element->srcpad, GST_DEBUG_FUNCPTR(progress_buffer_activatemode));
+    gst_pad_set_event_function         (element->srcpad, GST_DEBUG_FUNCPTR(progress_buffer_src_event));
+    gst_pad_set_getrange_function      (element->srcpad, GST_DEBUG_FUNCPTR(progress_buffer_getrange));
+    gst_element_add_pad (GST_ELEMENT (element), element->srcpad);
+
     element->cache = NULL;
     element->cache_read_offset = 0;
     g_mutex_init(&element->lock);
@@ -464,29 +469,6 @@ static gboolean progress_buffer_activatemode(GstPad *pad, GstObject *parent, Gst
     }
 
     return res;
-}
-
-/**
- * progress_buffer_create_sourcepad()
- *
- */
-static void progress_buffer_create_sourcepad(ProgressBuffer *element)
-{
-    element->srcpad = gst_pad_new_from_template (gst_element_class_get_pad_template (GST_ELEMENT_GET_CLASS(element), "src"), "src");
-
-    gst_pad_set_activatemode_function  (element->srcpad, GST_DEBUG_FUNCPTR(progress_buffer_activatemode));
-    gst_pad_set_event_function         (element->srcpad, GST_DEBUG_FUNCPTR(progress_buffer_src_event));
-    gst_pad_set_getrange_function      (element->srcpad, GST_DEBUG_FUNCPTR(progress_buffer_getrange));
-    GST_PAD_UNSET_FLUSHING(element->srcpad);
-
-    // Add pad
-    gst_element_add_pad (GST_ELEMENT (element), element->srcpad);
-
-    // Activate pad
-    gst_pad_set_active(element->srcpad, TRUE);
-
-    // Send "no-more-pads"
-    gst_element_no_more_pads(GST_ELEMENT (element));
 }
 
 /***********************************************************************************
@@ -820,10 +802,6 @@ static GstFlowReturn progress_buffer_chain(GstPad *pad, GstObject *parent, GstBu
 // INLINE - gst_buffer_unref()
     gst_buffer_unref(data);
 
-    // Here we can maintain some prebuffering strategy.
-    if (result != GST_FLOW_ERROR && !element->srcpad)
-        progress_buffer_create_sourcepad(element);
-
     return result;
 }
 
@@ -953,12 +931,6 @@ static gboolean progress_buffer_sink_event(GstPad *pad, GstObject *parent, GstEv
     ProgressBuffer *element = PROGRESS_BUFFER(parent);
     gboolean       result = TRUE;
 
-    // TODO Do we really need dynamic pad in progressbuffer?
-    // Create src pad if it does not exist. Since javasource will send caps event before
-    // data we need to create src pad.
-    if (!element->srcpad)
-        progress_buffer_create_sourcepad(element);
-
     // Ignore GST_EVENT_FLUSH_START and GST_EVENT_FLUSH_STOP if source seeking
     if (element->is_source_seeking)
     {
@@ -1070,7 +1042,7 @@ static GstFlowReturn progress_buffer_getrange(GstPad *pad, GstObject *parent, gu
 
     g_mutex_lock(&element->lock); // Use one lock for push and pull modes
 
-    if (!cache_has_enough_data2(element->cache, start_position, size))
+    if (element->cache == NULL || !cache_has_enough_data2(element->cache, start_position, size))
     {
         element->range_start = start_position;
         element->range_stop = element->range_start + size;

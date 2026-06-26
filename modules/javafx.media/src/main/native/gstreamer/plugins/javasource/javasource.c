@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2025, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -100,13 +100,6 @@ struct _JavaSource
     gboolean      is_random_access; // property controlled
     gboolean      update;
     gboolean      discont;
-    gboolean      header; // Indicates that buffer contains header information
-    // needed to decode stream in this buffer (GST_BUFFER_FLAG_HEADER).
-    // This flag is currently used in HLS on Windows only to mark buffers
-    // when we have header during format change. Windows requires special
-    // handling for format change and just GST_BUFFER_FLAG_DISCONT will no be
-    // enough. We will still send GST_BUFFER_FLAG_DISCONT when format change.
-    // Other platforms will ignore GST_BUFFER_FLAG_HEADER for now.
 
     guint         mode; // property controlled and/or internally
     gboolean      stop_on_pause; // property controlled
@@ -578,9 +571,16 @@ next_event:
                     // "audio/mpeg" mpegversion=4. We changing it here
                     // so downstream will undestand it.
                     if (strstr(element->mimetype, "audio/aac") != NULL)
-                        caps = gst_caps_new_simple("audio/mpeg", "mpegversion", G_TYPE_INT, 4, NULL);
+                    {
+                        caps = gst_caps_new_simple("audio/mpeg",
+                                "mpegversion", G_TYPE_INT, 4,
+                                "stream-format", G_TYPE_STRING, "adts",
+                                NULL);
+                    }
                     else
+                    {
                         caps = gst_caps_new_simple(element->mimetype, NULL, NULL);
+                    }
 
                     caps_event = gst_event_new_caps(caps);
                     if (caps_event)
@@ -626,7 +626,6 @@ next_event:
                     {
                         result = -1 * result;
                         element->discont = TRUE;
-                        element->header = TRUE;
                     }
 
                     gst_segment_init (&segment, GST_FORMAT_BYTES);
@@ -687,13 +686,6 @@ next_event:
                             buffer = gst_buffer_make_writable (buffer);
                             GST_BUFFER_FLAG_SET (buffer, GST_BUFFER_FLAG_DISCONT);
                             element->discont = FALSE;
-                        }
-
-                        if (element->header)
-                        {
-                            buffer = gst_buffer_make_writable (buffer);
-                            GST_BUFFER_FLAG_SET (buffer, GST_BUFFER_FLAG_HEADER);
-                            element->header = FALSE;
                         }
 
                         result = gst_pad_push(element->srcpad, buffer);
@@ -907,7 +899,6 @@ static GstStateChangeReturn java_source_change_state (GstElement *e,
             element->position = 0;
             element->position_time = 0;
             element->discont = FALSE;
-            element->header = FALSE;
             if ((element->mode & MODE_HLS) == MODE_HLS)
                 element->update = FALSE;
             else

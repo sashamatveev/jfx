@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2025, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -364,104 +364,31 @@ GstElement* CGstPipelineFactory::CreateAudioSinkElement()
 #endif
 }
 
-void CGstPipelineFactory::OnBufferPadAdded(GstElement* element, GstPad* pad, GstElement* peer)
-{
-    uint32_t uErrorCode = ERROR_NONE;
-
-    GstElement* source_bin = GST_ELEMENT_PARENT(element);
-    GstElement* pipeline = GST_ELEMENT_PARENT(source_bin);
-
-    GstPad *src_pad = gst_ghost_pad_new("src", pad);
-    if (NULL == src_pad)
-        uErrorCode = ERROR_GSTREAMER_CREATE_GHOST_PAD;
-
-    if (ERROR_NONE == uErrorCode)
-    {
-        if (!gst_pad_set_active(src_pad, TRUE) || !gst_element_add_pad(source_bin, src_pad))
-            uErrorCode = ERROR_GSTREAMER_ELEMENT_ADD_PAD;
-
-        if (ERROR_NONE == uErrorCode)
-        {
-            if (!gst_bin_add(GST_BIN(pipeline), peer))
-                uErrorCode = ERROR_GSTREAMER_BIN_ADD_ELEMENT;
-
-            if (ERROR_NONE == uErrorCode)
-            {
-                if (GST_STATE_CHANGE_FAILURE == gst_element_set_state(peer, GST_STATE_READY))
-                    uErrorCode = ERROR_GSTREAMER_PIPELINE_STATE_CHANGE;
-
-                if (ERROR_NONE == uErrorCode)
-                {
-                    if (!gst_element_link(source_bin, peer))
-                        uErrorCode = ERROR_GSTREAMER_ELEMENT_LINK;
-
-                    if (ERROR_NONE == uErrorCode)
-                        if (!gst_element_sync_state_with_parent(peer))
-                            uErrorCode = ERROR_GSTREAMER_PIPELINE_STATE_CHANGE;
-                }
-            }
-        }
-    }
-
-    if (ERROR_NONE != uErrorCode)
-    {
-        GstBus* bus = gst_pipeline_get_bus(GST_PIPELINE (pipeline));
-        GError* error = g_error_new (0, uErrorCode, "%s",
-                                     "Error in CGstPipelineFactory::OnBufferPadAdded().");
-        GstMessage* message = gst_message_new_error (GST_OBJECT (pipeline), error,
-                                                     "Error in CGstPipelineFactory::OnBufferPadAdded().");
-        gst_bus_post (bus, message);
-        gst_object_unref (bus);
-    }
-
-    g_signal_handlers_disconnect_by_func(element, (void*)G_CALLBACK(OnBufferPadAdded), peer);
-}
-
 uint32_t CGstPipelineFactory::AttachToSource(GstBin* bin, GstElement* source, GstElement* buffer, GstElement* element)
 {
-    // Look for progressbuffer element in the source
-    GstElement* progressbuffer = GetByFactoryName(source, "progressbuffer");
-    if (progressbuffer)
+    // Look for progressbuffer element in the source if buffer is not provided
+    if (buffer == NULL)
     {
-#if ENABLE_BREAK_MY_DATA
-        GstElement* dataBreaker = CreateElement ("breakmydata");
-        g_object_set (G_OBJECT (dataBreaker), "skip", BREAK_MY_DATA_SKIP, "probability", BREAK_MY_DATA_PROBABILITY, NULL);
-        if (!gst_bin_add (bin, dataBreaker))
-            return ERROR_GSTREAMER_BIN_ADD_ELEMENT;
-        if (!gst_element_link(dataBreaker, element))
-            return ERROR_GSTREAMER_ELEMENT_LINK;
-        g_signal_connect (progressbuffer, "pad-added", G_CALLBACK (OnBufferPadAdded), dataBreaker);
-#else
-        g_signal_connect (progressbuffer, "pad-added", G_CALLBACK (OnBufferPadAdded), element);
-#endif
-        gst_object_unref(progressbuffer);
-        return ERROR_NONE;
+        buffer = GetByFactoryName(source, "progressbuffer");
+        // Look for hlsprogressbuffer
+        if (buffer == NULL)
+        {
+            buffer = GetByFactoryName(source, "hlsprogressbuffer");
+        }
+    }
+    else
+    {
+        // Ref provided buffer, since we will unref it
+        gst_object_ref(buffer);
     }
 
-    // Source does not contain "progressbuffer".
     if (!gst_bin_add(bin, element))
         return ERROR_GSTREAMER_BIN_ADD_ELEMENT;
 
-#if ENABLE_BREAK_MY_DATA
-    GstElement* dataBreaker = CreateElement ("breakmydata");
-    g_object_set (G_OBJECT (dataBreaker), "skip", BREAK_MY_DATA_SKIP, "probability", BREAK_MY_DATA_PROBABILITY, NULL);
-    gst_bin_add (GST_BIN (pipeline), dataBreaker, NULL);
-    gst_element_link_many(source, dataBreaker, element);
-#else
-
-    // Create src pad on source bin if we have hlsprogressbuffer
-    GstElement* hlsprogressbuffer = NULL;
+    // Create src pad on source bin if we have buffer
     if (buffer)
     {
-        gst_object_ref(buffer);
-        hlsprogressbuffer = buffer;
-    }
-    else
-        hlsprogressbuffer = GetByFactoryName(source, "hlsprogressbuffer");
-
-    if (hlsprogressbuffer)
-    {
-        GstPad* src_pad = gst_element_get_static_pad(hlsprogressbuffer, "src");
+        GstPad* src_pad = gst_element_get_static_pad(buffer, "src");
         if (NULL == src_pad)
             return ERROR_GSTREAMER_ELEMENT_GET_PAD;
 
@@ -481,12 +408,11 @@ uint32_t CGstPipelineFactory::AttachToSource(GstBin* bin, GstElement* source, Gs
 
         gst_object_unref(src_pad);
 
-        gst_object_unref(hlsprogressbuffer);
+        gst_object_unref(buffer);
     }
 
     if (!gst_element_link(source, element))
         return ERROR_GSTREAMER_ELEMENT_LINK;
-#endif
 
     return ERROR_NONE;
 }

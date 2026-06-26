@@ -3040,11 +3040,6 @@ static gboolean dshowwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent
     switch (GST_EVENT_TYPE (event))
     {
     case GST_EVENT_SEGMENT:
-        if (decoder->eInputFormat == MEDIA_FORMAT_AUDIO_AAC)
-        {
-            const GstSegment *pSegment = NULL;
-            gst_event_parse_segment(event, &pSegment);
-        }
         gst_event_copy_segment(event, &segment);
         if (decoder->enable_position)
         {
