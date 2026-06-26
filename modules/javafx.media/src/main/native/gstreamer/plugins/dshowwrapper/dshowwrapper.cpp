@@ -835,15 +835,6 @@ int dshowwrapper_deliver(GstBuffer *pBuffer, sUserData *pUserData)
                 g_print("JFXMEDIA OUTPUT AAC  -1\n");
         }
 #endif
-        if (decoder->eInputFormat == MEDIA_FORMAT_AUDIO_AAC)
-        {
-            g_print("AMTEMP dshow aac out pts=%" G_GINT64_FORMAT " dur=%" G_GINT64_FORMAT " discont=%d out_index=%d\n",
-                    GST_BUFFER_TIMESTAMP_IS_VALID(decoder->out_buffer[pUserData->output_index]) ? GST_BUFFER_TIMESTAMP(decoder->out_buffer[pUserData->output_index]) : -1,
-                    GST_BUFFER_DURATION_IS_VALID(decoder->out_buffer[pUserData->output_index]) ? GST_BUFFER_DURATION(decoder->out_buffer[pUserData->output_index]) : -1,
-                    GST_BUFFER_FLAG_IS_SET(decoder->out_buffer[pUserData->output_index], GST_BUFFER_FLAG_DISCONT),
-                    pUserData->output_index);
-        }
-
         // Set output buffer to NULL before delivering it, otherwise flush stop can release it right after
         // we finish delivery.
         pBufferOut = decoder->out_buffer[pUserData->output_index];
@@ -2975,15 +2966,6 @@ static GstFlowReturn dshowwrapper_chain (GstPad * pad, GstObject *parent, GstBuf
             g_print("JFXMEDIA INPUT AAC  -1\n");
     }
 #endif
-    if (decoder->eInputFormat == MEDIA_FORMAT_AUDIO_AAC)
-    {
-        g_print("AMTEMP dshow aac in pts=%" G_GINT64_FORMAT " dur=%" G_GINT64_FORMAT " discont=%d size=%zu\n",
-                GST_BUFFER_TIMESTAMP_IS_VALID(buf) ? GST_BUFFER_TIMESTAMP(buf) : -1,
-                GST_BUFFER_DURATION_IS_VALID(buf) ? GST_BUFFER_DURATION(buf) : -1,
-                GST_BUFFER_FLAG_IS_SET(buf, GST_BUFFER_FLAG_DISCONT),
-                gst_buffer_get_size(buf));
-    }
-
     if (GST_BUFFER_TIMESTAMP_IS_VALID(buf))
     {
         decoder->enable_pts = TRUE;
@@ -3062,11 +3044,6 @@ static gboolean dshowwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent
         {
             const GstSegment *pSegment = NULL;
             gst_event_parse_segment(event, &pSegment);
-            if (pSegment != NULL)
-            {
-                g_print("AMTEMP dshow aac sink GST_EVENT_SEGMENT start=%" G_GINT64_FORMAT " stop=%" G_GINT64_FORMAT " pos=%" G_GINT64_FORMAT " time=%" G_GINT64_FORMAT " pending=%p\n",
-                        pSegment->start, pSegment->stop, pSegment->position, pSegment->time, decoder->pending_event);
-            }
         }
         gst_event_copy_segment(event, &segment);
         if (decoder->enable_position)

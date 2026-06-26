@@ -313,15 +313,6 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     case GST_EVENT_SEGMENT:
     {
         TRACE(DEMUX_SINK_EVENTS, "GST_EVENT_SEGMENT\n");
-        {
-            const GstSegment *segment = NULL;
-            gst_event_parse_segment(event, &segment);
-            if (segment != NULL)
-            {
-                g_print("AMTEMP mfdemux sink GST_EVENT_SEGMENT start=%" G_GINT64_FORMAT " stop=%" G_GINT64_FORMAT " pos=%" G_GINT64_FORMAT " time=%" G_GINT64_FORMAT " cached=%p\n",
-                        segment->start, segment->stop, segment->position, segment->time, demux->cached_segment_event);
-            }
-        }
 
         demux->force_discontinuity = TRUE;
         demux->is_eos = FALSE;
@@ -421,8 +412,6 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
         }
 
         TRACE(DEMUX_SINK_EVENTS, "FX_EVENT_SEGMENT_READY size=%lld\n", size);
-        g_print("AMTEMP mfdemux FX_EVENT_SEGMENT_READY size=%" G_GINT64_FORMAT " start_task_on_first_segment=%d reader=%p\n",
-                size, demux->start_task_on_first_segment, demux->pSourceReader);
 
         if (demux->pGSTMFByteStream)
             demux->pGSTMFByteStream->SetStreamLength((QWORD)size);
@@ -1158,8 +1147,7 @@ static void mfdemux_send_new_segment(GstMFDemux *demux, GstClockTime position)
 
     TRACE(DEMUX_SEGMENT_STATE, "send new segment start=%lld stop=%lld time=%lld position=%lld duration=%lld rate=%lf\n",
           segment.start, segment.stop, segment.time, segment.position, segment.duration, segment.rate);
-    g_print("AMTEMP mfdemux send_new_segment start=%" G_GINT64_FORMAT " stop=%" G_GINT64_FORMAT " time=%" G_GINT64_FORMAT " pos=%" G_GINT64_FORMAT " dur=%" G_GINT64_FORMAT " rate=%lf\n",
-            segment.start, segment.stop, segment.time, segment.position, segment.duration, segment.rate);
+
     new_segment = gst_event_new_segment(&segment);
     mfdemux_push_sink_event(demux, new_segment);
 }
@@ -1240,16 +1228,12 @@ static GstFlowReturn mfdemux_deliver_sample(GstMFDemux *demux, GstPad* pad,
     {
         TRACE(DEMUX_SEGMENT_STATE, "send_new_segment pts=%lld\n",
               GST_BUFFER_TIMESTAMP_IS_VALID(pBuffer) ? GST_BUFFER_TIMESTAMP(pBuffer) : -1);
-        g_print("AMTEMP mfdemux send_new_segment pts=%" G_GINT64_FORMAT " pad=%s\n",
-                GST_BUFFER_TIMESTAMP_IS_VALID(pBuffer) ? GST_BUFFER_TIMESTAMP(pBuffer) : -1,
-                GST_PAD_NAME(pad));
         mfdemux_send_new_segment(demux, GST_BUFFER_TIMESTAMP(pBuffer));
         demux->send_new_segment = FALSE;
     }
     else if (demux->cached_segment_event != NULL)
     {
         TRACE(DEMUX_SEGMENT_STATE, "push cached segment event=%p\n", demux->cached_segment_event);
-        g_print("AMTEMP mfdemux push cached segment event=%p\n", demux->cached_segment_event);
         mfdemux_push_sink_event(demux, demux->cached_segment_event);
         demux->cached_segment_event = NULL;
     }
@@ -1259,11 +1243,6 @@ static GstFlowReturn mfdemux_deliver_sample(GstMFDemux *demux, GstPad* pad,
           GST_BUFFER_TIMESTAMP_IS_VALID(pBuffer) ? GST_BUFFER_TIMESTAMP(pBuffer) : -1,
           GST_BUFFER_DURATION_IS_VALID(pBuffer) ? GST_BUFFER_DURATION(pBuffer) : -1,
           GST_BUFFER_FLAG_IS_SET(pBuffer, GST_BUFFER_FLAG_DISCONT));
-    g_print("AMTEMP mfdemux out pad=%s pts=%" G_GINT64_FORMAT " dur=%" G_GINT64_FORMAT " discont=%d\n",
-            GST_PAD_NAME(pad),
-            GST_BUFFER_TIMESTAMP_IS_VALID(pBuffer) ? GST_BUFFER_TIMESTAMP(pBuffer) : -1,
-            GST_BUFFER_DURATION_IS_VALID(pBuffer) ? GST_BUFFER_DURATION(pBuffer) : -1,
-            GST_BUFFER_FLAG_IS_SET(pBuffer, GST_BUFFER_FLAG_DISCONT));
 
     if (SUCCEEDED(hr))
         ret = gst_pad_push(pad, pBuffer);
