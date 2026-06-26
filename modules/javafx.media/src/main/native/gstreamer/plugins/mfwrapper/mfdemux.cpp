@@ -687,8 +687,8 @@ static gboolean mfdemux_init_demux(GstMFDemux *demux, GstCaps *caps)
 
     if (demux->pGSTMFByteStream == NULL)
     {
-        demux->pGSTMFByteStream = new (nothrow) CMFGSTByteStream(hr, (QWORD)data_length, demux->sink_pad, demux->is_hls);
-        if (FAILED(hr) || demux->pGSTMFByteStream == NULL)
+        demux->pGSTMFByteStream = new (nothrow) CMFGSTByteStream((QWORD)data_length, demux->sink_pad, demux->is_hls);
+        if (demux->pGSTMFByteStream == NULL)
             return FALSE;
 
         hr = demux->pGSTMFByteStream->QueryInterface(IID_IMFByteStream, (void**)&demux->pIMFByteStream);

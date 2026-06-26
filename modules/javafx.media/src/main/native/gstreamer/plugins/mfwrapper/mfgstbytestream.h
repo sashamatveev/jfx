@@ -40,7 +40,7 @@ static const GUID GUID_NULL =
 class CMFGSTByteStream : public IMFByteStream
 {
 public:
-    CMFGSTByteStream(HRESULT &hr, QWORD qwLength, GstPad *pSinkPad, BOOL bIsHLS);
+    CMFGSTByteStream(QWORD qwLength, GstPad *pSinkPad, BOOL bIsSegmentedStream);
     ~CMFGSTByteStream();
 
     void Reset();
@@ -96,9 +96,8 @@ private:
     ULONG m_cbBytes;
     // Bytes read and stored in m_pBytes
     ULONG m_cbBytesRead;
-    // Completion callback and result
-    IMFAsyncCallback *m_pCallback;
-    IMFAsyncResult   *m_pAsyncResult;
+    // Completion result
+    IMFAsyncResult *m_pAsyncResult;
     // Read result
     HRESULT m_readResult;
 
@@ -106,8 +105,7 @@ private:
     BOOL m_bIsEOS;
     BOOL m_bIsEOSEventReceived;
     // Set to true if source is fragmented MP4
-    BOOL m_bfMP4;
-    BOOL m_bIsReload;
+    BOOL m_bIsSegmentedStream;
 
     CRITICAL_SECTION m_csLock;
 

@@ -24,6 +24,7 @@
  */
 
 #include "mfgstbytestream.h"
+#include "mftrace.h"
 
 template <class T> void SafeRelease(T **ppT)
 {
@@ -34,11 +35,11 @@ template <class T> void SafeRelease(T **ppT)
     }
 }
 
-CMFGSTByteStream::CMFGSTByteStream(HRESULT &hr, QWORD qwLength, GstPad *pSinkPad, BOOL bIsHLS)
+CMFGSTByteStream::CMFGSTByteStream(QWORD qwLength, GstPad *pSinkPad, BOOL bIsSegmentedStream)
 {
     m_ulRefCount = 0;
 
-    m_bfMP4 = bIsHLS;
+    m_bIsSegmentedStream = bIsSegmentedStream;
     m_qwLength = qwLength;
     m_pSinkPad = pSinkPad;
 
@@ -57,14 +58,12 @@ void CMFGSTByteStream::Reset()
     m_pBytes = NULL;
     m_cbBytes = 0;
     m_cbBytesRead = 0;
-    m_pCallback = NULL;
     m_pAsyncResult = NULL;
     m_readResult = S_OK;
     m_qwPosition = 0;
     m_bWaitForEvent = FALSE;
     m_bIsEOS = FALSE;
     m_bIsEOSEventReceived = FALSE;
-    m_bIsReload = FALSE;
 }
 
 HRESULT CMFGSTByteStream::ReadRangeAvailable()
@@ -91,40 +90,35 @@ void CMFGSTByteStream::SetStreamLength(QWORD qwLength)
 // seek.
 bool CMFGSTByteStream::IsSeekSupported()
 {
-    return !m_bfMP4;
+    return !m_bIsSegmentedStream;
 }
 
 HRESULT CMFGSTByteStream::CompleteReadData(HRESULT hr)
 {
-    // TRACE("JFXMEDIA CMFGSTByteStream::CompleteReadData() 0x%X m_pCallback %p m_pAsyncResult %p\n", hr, m_pCallback, m_pAsyncResult);
     m_readResult = hr;
-    if (m_pCallback && m_pAsyncResult)
-        return m_pCallback->Invoke(m_pAsyncResult);
+
+    if (m_pAsyncResult)
+        return MFInvokeCallback(m_pAsyncResult);
 
     return S_OK;
 }
 
 void CMFGSTByteStream::SignalEOS()
 {
-    // TRACE("JFXMEDIA CMFGSTByteStream::SignalEOS()\n");
     m_bIsEOSEventReceived = TRUE;
 }
 
 void CMFGSTByteStream::ClearEOS()
 {
-    // TRACE("JFXMEDIA CMFGSTByteStream::ClearEOS()\n");
     m_bIsEOS = FALSE;
     m_bIsEOSEventReceived = FALSE;
 }
 
 BOOL CMFGSTByteStream::IsReload()
 {
-    //return m_bIsReload;
     bool bIsReload = false;
-    if (m_bfMP4 && !m_bIsEOSEventReceived)
+    if (m_bIsSegmentedStream && !m_bIsEOSEventReceived)
         bIsReload = true;
-
-    // TRACE("JFXMEDIA CMFGSTByteStream::IsReload() %d\n", bIsReload);
 
     return bIsReload;
 }
@@ -140,16 +134,18 @@ HRESULT CMFGSTByteStream::BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallb
     if (m_pSinkPad == NULL)
         return E_POINTER;
 
-    if (m_readResult != S_OK)
-        return m_readResult; // Do not start new read if old one failed.
+    // Reject BeginRead() if we already have pending read
+    if (m_pAsyncResult != NULL)
+        return MF_E_INVALIDREQUEST;
 
-    // TRACE("JFXMEDIA CMFGSTByteStream::BeginRead() cb: %lu m_qwPosition: %llu m_qwLength: %llu\n", cb, m_qwPosition, m_qwLength);
+    // Do not start new read if old one failed
+    if (m_readResult != S_OK)
+        return m_readResult;
 
     // Save read request
     m_pBytes = pb;
     m_cbBytes = cb;
     m_cbBytesRead = 0;
-    m_pCallback = pCallback;
 
     // Create async result object to signal read completion
     hr = MFCreateAsyncResult(NULL, pCallback, punkState, &m_pAsyncResult);
@@ -176,15 +172,15 @@ HRESULT CMFGSTByteStream::EndRead(IMFAsyncResult *pResult, ULONG *pcbRead)
     m_bWaitForEvent = FALSE;
     Unlock();
 
+    if (pResult == NULL || pcbRead == NULL)
+        return E_POINTER;
+
     if (pResult != NULL)
         pResult->SetStatus(m_readResult);
 
     *pcbRead = m_cbBytesRead;
 
-    m_pCallback = NULL;
-    m_pAsyncResult = NULL;
-
-    // TRACE("JFXMEDIA CMFGSTByteStream::EndRead() m_cbBytesRead: %lu\n", m_cbBytesRead);
+    SafeRelease(&m_pAsyncResult);
 
     return S_OK;
 }
@@ -196,7 +192,8 @@ HRESULT CMFGSTByteStream::EndWrite(IMFAsyncResult *pResult, ULONG *pcbWritten)
 
 HRESULT CMFGSTByteStream::Flush()
 {
-    return E_NOTIMPL;
+    // No effect for read only streams like ours.
+    return S_OK;
 }
 
 HRESULT CMFGSTByteStream::GetCapabilities(DWORD *pdwCapabilities)
@@ -214,7 +211,6 @@ HRESULT CMFGSTByteStream::GetCurrentPosition(QWORD *pqwPosition)
 
     (*pqwPosition) = m_qwPosition;
 
-    // TRACE("JFXMEDIA CMFGSTByteStream::GetCurrentPosition() %llu\n", (*pqwPosition));
     return S_OK;
 }
 
@@ -224,8 +220,6 @@ HRESULT CMFGSTByteStream::GetLength(QWORD *pqwLength)
         return E_FAIL;
 
     (*pqwLength) = m_qwLength;
-
-    // TRACE("JFXMEDIA CMFGSTByteStream::GetLength() %llu\n", (*pqwLength));
 
     return S_OK;
 }
@@ -241,8 +235,6 @@ HRESULT CMFGSTByteStream::IsEndOfStream(BOOL *pfEndOfStream)
         (*pfEndOfStream) = TRUE;
     else
         (*pfEndOfStream) = FALSE;
-
-    // TRACE("JFXMEDIA CMFGSTByteStream::IsEndOfStream() %d\n", (*pfEndOfStream));
 
     return S_OK;
 }
@@ -283,22 +275,17 @@ HRESULT CMFGSTByteStream::Seek(MFBYTESTREAM_SEEK_ORIGIN SeekOrigin, LONGLONG llS
 
 HRESULT CMFGSTByteStream::SetCurrentPosition(QWORD qwPosition)
 {
-    // TRACE("JFXMEDIA CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu\n", qwPosition, m_qwPosition);
     if (qwPosition > m_qwLength)
     {
-        // TRACE("JFXMEDIA CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu E_INVALIDARG\n", qwPosition, m_qwPosition);
         return E_INVALIDARG;
     }
 
     if (m_qwPosition == qwPosition)
     {
-        // TRACE("JFXMEDIA CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu S_OK\n", qwPosition, m_qwPosition);
         return S_OK;
     }
 
     m_qwPosition = qwPosition;
-
-    // TRACE("JFXMEDIA CMFGSTByteStream::SetCurrentPosition() qwPosition: %llu m_qwPosition: %llu S_OK\n", qwPosition, m_qwPosition);
 
     return S_OK;
 }

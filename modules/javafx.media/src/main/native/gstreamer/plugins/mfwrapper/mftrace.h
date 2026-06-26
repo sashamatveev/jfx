@@ -46,6 +46,9 @@
 #define DEMUX_OUTPUT_PTS    0
 #define DEMUX_TASK          0
 
+// Byte Stream
+#define BYTE_STREAM         0
+
 #if TRACE_ENABLE
 static inline const char *trace_filename(const char *path)
 {
