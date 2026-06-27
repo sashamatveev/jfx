@@ -616,27 +616,9 @@ static GstFlowReturn progress_buffer_enqueue_item(ProgressBuffer *element, GstMi
                     return GST_FLOW_ERROR;
                 }
 
-                if ((segment.flags & GST_SEGMENT_FLAG_UPDATE) == GST_SEGMENT_FLAG_UPDATE) // Updating segments create new cache.
-                {
-                    if (element->cache)
-                        destroy_cache(element->cache);
-
-                    element->cache = create_cache();
-                    if (!element->cache)
-                    {
-                        gst_element_message_full(GST_ELEMENT(element), GST_MESSAGE_ERROR, GST_RESOURCE_ERROR, GST_RESOURCE_ERROR_OPEN_READ_WRITE,
-                                                 g_strdup("Couldn't create backing cache"), NULL,
-                                                 ("progressbuffer.c"), ("progress_buffer_enqueue_item"), 0);
-                        gst_event_unref(event); // INLINE - gst_event_unref()
-                        return GST_FLOW_ERROR;
-                    }
-                }
-                else
-                {
-                    cache_set_write_position(element->cache, 0);
-                    cache_set_read_position(element->cache, 0);
-                    element->cache_read_offset = segment.start;
-                }
+                cache_set_write_position(element->cache, 0);
+                cache_set_read_position(element->cache, 0);
+                element->cache_read_offset = segment.start;
 
                 gst_segment_copy_into (&segment, &element->sink_segment);
                 progress_buffer_set_pending_event(element, event);
@@ -1042,7 +1024,7 @@ static GstFlowReturn progress_buffer_getrange(GstPad *pad, GstObject *parent, gu
 
     g_mutex_lock(&element->lock); // Use one lock for push and pull modes
 
-    if (element->cache == NULL || !cache_has_enough_data2(element->cache, start_position, size))
+    if (!cache_has_enough_data2(element->cache, start_position, size))
     {
         element->range_start = start_position;
         element->range_stop = element->range_start + size;
@@ -1102,8 +1084,26 @@ static GstStateChangeReturn progress_buffer_change_state (GstElement *e,
                                                           GstStateChange transition)
 {
     ProgressBuffer *element = PROGRESS_BUFFER(e);
-    GstStateChangeReturn ret = GST_ELEMENT_CLASS (parent_class)->change_state (e, transition);
 
+    switch (transition)
+    {
+        case GST_STATE_CHANGE_NULL_TO_READY:
+            element->cache = create_cache();
+            if (!element->cache)
+            {
+                gst_element_message_full(GST_ELEMENT(element), GST_MESSAGE_ERROR,
+                        GST_RESOURCE_ERROR, GST_RESOURCE_ERROR_OPEN_READ_WRITE,
+                        g_strdup("Couldn't create backing cache"), NULL,
+                        ("progressbuffer.c"), ("progress_buffer_change_state"), 0);
+                return GST_STATE_CHANGE_FAILURE;
+            }
+            break;
+
+        default:
+            break;
+    }
+
+    GstStateChangeReturn ret = GST_ELEMENT_CLASS (parent_class)->change_state (e, transition);
     if (ret == GST_STATE_CHANGE_FAILURE)
         return ret;
 
@@ -1120,6 +1120,7 @@ static GstStateChangeReturn progress_buffer_change_state (GstElement *e,
         default:
             break;
     }
+
     return ret;
 }
 

@@ -98,7 +98,6 @@ struct _JavaSource
     // Seek helper fields
     gboolean      is_seekable; // property controlled
     gboolean      is_random_access; // property controlled
-    gboolean      update;
     gboolean      discont;
 
     guint         mode; // property controlled and/or internally
@@ -485,7 +484,6 @@ static gboolean java_source_perform_seek(JavaSource *element, GstPad *pad, GstEv
             element->position_time = 0;
         }
         element->discont = TRUE;
-        element->update = FALSE;
         result = TRUE;
     }
 
@@ -629,8 +627,6 @@ next_event:
                     }
 
                     gst_segment_init (&segment, GST_FORMAT_BYTES);
-                    if (element->update)
-                        segment.flags |= GST_SEGMENT_FLAG_UPDATE;
                     segment.rate = element->rate;
                     segment.start = ((gint64)start_time*GST_SECOND) / HLS_VALUE_FLOAT_MULTIPLIER;
                     segment.stop = result;
@@ -641,8 +637,6 @@ next_event:
                 else
                 {
                     gst_segment_init (&segment, GST_FORMAT_BYTES);
-                    if (element->update)
-                        segment.flags |= GST_SEGMENT_FLAG_UPDATE;
                     segment.rate = element->rate;
                     segment.start = element->position;
                     segment.stop = element->size;
@@ -899,10 +893,6 @@ static GstStateChangeReturn java_source_change_state (GstElement *e,
             element->position = 0;
             element->position_time = 0;
             element->discont = FALSE;
-            if ((element->mode & MODE_HLS) == MODE_HLS)
-                element->update = FALSE;
-            else
-                element->update = TRUE;
             GST_PAD_STREAM_UNLOCK(element->srcpad);
 
             g_mutex_lock(&element->lock);
