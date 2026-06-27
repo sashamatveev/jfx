@@ -81,7 +81,9 @@ HRESULT CMFGSTByteStream::ReadRangeAvailable()
 
 void CMFGSTByteStream::SetStreamLength(QWORD qwLength)
 {
+    Lock();
     m_qwLength = qwLength;
+    Unlock();
 }
 
 // Even if we reporting MFBYTESTREAM_IS_SEEKABLE to MF to make it happy (will not
@@ -105,13 +107,17 @@ HRESULT CMFGSTByteStream::CompleteReadData(HRESULT hr)
 
 void CMFGSTByteStream::SignalEOS()
 {
+    Lock();
     m_bIsEOSEventReceived = TRUE;
+    Unlock();
 }
 
 void CMFGSTByteStream::ClearEOS()
 {
+    Lock();
     m_bIsEOS = FALSE;
     m_bIsEOSEventReceived = FALSE;
+    Unlock();
 }
 
 BOOL CMFGSTByteStream::IsReload()
@@ -352,15 +358,23 @@ HRESULT CMFGSTByteStream::ReadData()
         // pass EOS. "progressbuffer" or "hlsprogressbuffer" does not handle
         // last buffer nicely and will return EOS if we do not read exact
         // amount of data.
+        Lock();
         if (m_qwPosition < m_qwLength && (m_qwPosition + m_cbBytes) > m_qwLength)
             m_cbBytes = m_qwLength - m_qwPosition;
 
         if (m_cbBytesRead < m_cbBytes)
+        {
             cbBytes = m_cbBytes - m_cbBytesRead;
+        }
         else
+        {
+            Unlock();
             return CompleteReadData(E_FAIL);
+        }
 
         offset = (guint64)m_qwPosition;
+
+        Unlock();
 
         ret = gst_pad_pull_range(m_pSinkPad, offset, (guint)cbBytes, &buf);
         if (ret == GST_FLOW_FLUSHING)
@@ -398,8 +412,10 @@ HRESULT CMFGSTByteStream::PushDataBuffer(GstBuffer* pBuffer)
         return E_POINTER;
 
     // Set EOS flag, so we can complete and signal EOS
+    Lock();
     if (m_bIsEOSEventReceived)
         m_bIsEOS = TRUE;
+    Unlock();
 
     GstMapInfo info;
     gboolean unmap = FALSE;

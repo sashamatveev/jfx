@@ -306,7 +306,6 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
 {
     gboolean ret = FALSE;
     GstMFDemux *demux = GST_MFDEMUX(parent);
-    HRESULT hr = S_OK;
 
     switch (GST_EVENT_TYPE(event))
     {
@@ -328,8 +327,6 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
         }
         else
         {
-            gboolean pads_ready = (demux->audio_src_pad != NULL && gst_pad_is_linked(demux->audio_src_pad)) ||
-                                  (demux->video_src_pad != NULL && gst_pad_is_linked(demux->video_src_pad));
             if (demux->cached_segment_event != NULL)
                 gst_event_unref(demux->cached_segment_event); // INLINE - gst_event_unref()
 
@@ -581,7 +578,7 @@ static gboolean mfdemux_src_event(GstPad *pad, GstObject *parent, GstEvent *even
                 g_mutex_unlock(&demux->lock);
 
                 // Do not re-start if we fail
-                if (SUCCEEDED(hr))
+                if (SUCCEEDED(hr) && ret)
                 {
                     if (demux->is_hls)
                     {
@@ -1128,10 +1125,10 @@ static void mfdemux_send_new_segment(GstMFDemux *demux, GstClockTime position)
 
     segment.rate = demux->rate;
     segment.start = demux->seek_position;
-    segment.stop = demux->llDuration * 100;
+    segment.stop = demux->llDuration < 0 ? GST_CLOCK_TIME_NONE : demux->llDuration * 100;
     segment.time = demux->seek_position;
     segment.position = position;
-    segment.duration = demux->llDuration * 100;
+    segment.duration = segment.stop;
 
     new_segment = gst_event_new_segment(&segment);
     mfdemux_push_sink_event(demux, new_segment);
@@ -1159,19 +1156,22 @@ static GstFlowReturn mfdemux_deliver_sample(GstMFDemux *demux, GstPad* pad,
     }
 
     if (SUCCEEDED(hr))
-    {
         pBuffer = gst_buffer_new_allocate(NULL, (gsize)cbMFCurrentLength, NULL);
-        if (pBuffer == NULL)
-            hr = E_POINTER;
+
+    if (FAILED(hr) || pBuffer == NULL)
+    {
+        if (unlock_buffer)
+            pMFBuffer->Unlock();
+
+        SafeRelease(&pMFBuffer);
+
+        return GST_FLOW_ERROR;
     }
 
-    if (SUCCEEDED(hr))
-    {
-        if (gst_buffer_map(pBuffer, &info, GST_MAP_READWRITE))
-            unmap_buffer = TRUE;
-        else
-            hr = E_FAIL;
-    }
+    if (gst_buffer_map(pBuffer, &info, GST_MAP_READWRITE))
+        unmap_buffer = TRUE;
+    else
+        hr = E_FAIL;
 
     if (SUCCEEDED(hr))
     {
@@ -1276,9 +1276,6 @@ static void mfdemux_loop(GstPad * pad)
     GstMFDemux *demux = GST_MFDEMUX(GST_PAD_PARENT(pad));
     GstFlowReturn result = GST_FLOW_OK;
 
-    //g_print("JFXMEDIA TEMP mfdemux_loop() enter is_demux_initialized=%d src_result=%d is_eos=%d\n",
-    //        demux->is_demux_initialized, demux->src_result, demux->is_eos);
-
     if (!demux->is_demux_initialized)
     {
         GST_PAD_STREAM_UNLOCK(pad);
@@ -1291,6 +1288,7 @@ static void mfdemux_loop(GstPad * pad)
                 g_strdup("mfdemux init or configure failed"), NULL,
                 ("mfdemux.c"), ("mfdemux_loop"), 0);
             gst_pad_pause_task(pad);
+            GST_PAD_STREAM_LOCK(pad);
             return;
         }
         TRACE(DEMUX_TASK, "Init and configure demux done\n");

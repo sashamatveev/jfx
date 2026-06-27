@@ -342,6 +342,7 @@ static void hls_progress_buffer_flush_data(HLSProgressBuffer *element)
             element->cache_size[i] = 0;
             element->cache_write_ready[i] = TRUE;
             element->cache_read_ready[i] = FALSE;
+            element->cache_discont[i] = FALSE;
         }
     }
 
@@ -521,8 +522,9 @@ static GstFlowReturn hls_progress_buffer_getrange(GstPad *pad, GstObject *parent
     if (!element->cache_read_ready[element->cache_read_index])
     {
         send_hls_not_full_message(element);
+        gboolean is_eos = element->is_eos;
         g_mutex_unlock(&element->lock);
-        if (element->is_eos)
+        if (is_eos)
             return GST_FLOW_EOS;
         else
             return GST_FLOW_FLUSHING;
@@ -667,7 +669,8 @@ static gboolean hls_progress_buffer_sink_event(GstPad *pad, GstObject *parent, G
             GstSegment segment;
 
             g_mutex_lock(&element->lock);
-            if (element->srcresult != GST_FLOW_OK)
+            if (element->srcresult != GST_FLOW_OK &&
+                    !(element->srcresult == GST_FLOW_FLUSHING && element->is_eos))
             {
                 // INLINE - gst_event_unref()
                 gst_event_unref(event);
