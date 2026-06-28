@@ -211,8 +211,8 @@ static void gst_mfdemux_init(GstMFDemux *demux)
 
     // Init video format with some defaults
     demux->videoFormat.codecID = JFX_CODEC_ID_UNKNOWN;
-    demux->videoFormat.uiWidth = 1920;
-    demux->videoFormat.uiHeight = 1080;
+    demux->videoFormat.uiWidth = 3840;
+    demux->videoFormat.uiHeight = 2160;
 
     demux->audio_src_pad = NULL;
     demux->video_src_pad = NULL;

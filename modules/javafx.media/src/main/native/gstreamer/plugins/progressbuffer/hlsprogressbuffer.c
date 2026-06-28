@@ -370,7 +370,7 @@ static GstFlowReturn hls_progress_buffer_chain(GstPad *pad, GstObject *parent, G
     }
 
     g_mutex_lock(&element->lock);
-    if (element->srcresult != GST_FLOW_FLUSHING)
+    if (element->srcresult != GST_FLOW_FLUSHING && element->cache_write_index >= 0)
     {
         if (GST_BUFFER_FLAG_IS_SET(data, GST_BUFFER_FLAG_DISCONT))
             element->cache_discont[element->cache_write_index] = TRUE;

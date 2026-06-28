@@ -171,14 +171,32 @@ final class HLSConnectionHolder extends ConnectionHolder {
         }
 
         if (hasAudioExtStream && position != 0) {
-            if (getAudioStream() == null || getAudioStream().getCurrentPlaylist() == null) {
+            HLSConnectionHolder audioStream = getAudioStream();
+            if (audioStream == null || audioStream.getCurrentPlaylist() == null) {
                 return -1; // Something wrong or EOS
+            }
+
+            if (isEndSeek(position)) {
+                double audioPosition = audioStream.getCurrentPlaylist().seekLastSegment();
+                if (audioPosition == -1) {
+                    return -1; // Something wrong or EOS
+                }
+
+                // Audio and video renditions can have slightly different durations.
+                // Try to align video to audio first, but fall back to the last video
+                // segment instead of reporting EOS for seek-to-end.
+                if (currentPlaylist.seek((long) audioPosition) == -1 &&
+                        currentPlaylist.seekLastSegment() == -1) {
+                    return -1; // Something wrong or EOS
+                }
+
+                return (long) (audioPosition * HLS_VALUE_FLOAT_MULTIPLIER);
             }
 
             // Video stream with audio extenstion.
             // Get start of audio segment for seek position. This is same start position for
             // audio stream when seek to "position".
-            double audioPosition = getAudioStream().getCurrentPlaylist().seekGetStartTime(position);
+            double audioPosition = audioStream.getCurrentPlaylist().seekGetStartTime(position);
 
             // Seek this video stream to audioPosition. Note: If we seek video stream to position,
             // we might get segment which will not be aligned with audio start time after seek, since
@@ -195,6 +213,11 @@ final class HLSConnectionHolder extends ConnectionHolder {
         } else {
             return (long) (currentPlaylist.seek(position) * HLS_VALUE_FLOAT_MULTIPLIER);
         }
+    }
+
+    private boolean isEndSeek(long position) {
+        return duration >= 0 &&
+                position >= ((double) duration / HLS_VALUE_FLOAT_MULTIPLIER) - 1.0;
     }
 
     @Override
@@ -1534,6 +1557,22 @@ final class HLSConnectionHolder extends ConnectionHolder {
             }
 
             return -1;
+        }
+
+        double seekLastSegment() {
+            synchronized (lock) {
+                if (isLive || mediaFilesStartTimes.isEmpty()) {
+                    return -1.0;
+                }
+
+                int lastIndex = mediaFilesStartTimes.size() - 1;
+                if (isFragmentedMP4() && lastIndex == 0) {
+                    return -1.0;
+                }
+
+                mediaFileIndex = lastIndex - 1; // Load segment will increment mediaFileIndex.
+                return getMediaFileStartTime(lastIndex);
+            }
         }
 
         int getMimeType() {

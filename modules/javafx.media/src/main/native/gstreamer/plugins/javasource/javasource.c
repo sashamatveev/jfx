@@ -486,6 +486,13 @@ static gboolean java_source_perform_seek(JavaSource *element, GstPad *pad, GstEv
         element->discont = TRUE;
         result = TRUE;
     }
+    else if ((element->mode & MODE_HLS) == MODE_HLS && new_position == -1)
+    {
+        element->pending_event = GST_EVENT_EOS;
+        element->position = 0;
+        element->discont = TRUE;
+        result = TRUE;
+    }
 
     g_mutex_lock(&element->lock);
     element->srcresult = GST_FLOW_OK;
@@ -650,6 +657,7 @@ next_event:
 
         case GST_EVENT_EOS:
             gst_pad_push_event (element->srcpad, gst_event_new_eos());
+            element->pending_event = GST_EVENT_UNKNOWN;
             result = GST_FLOW_EOS;
             break;
 
