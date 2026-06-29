@@ -1014,14 +1014,10 @@ static gboolean mfdemux_configure_video_src_caps(GstMFDemux *demux)
 
     if (demux->videoFormat.codecID == JFX_CODEC_ID_H264)
     {
-        // Do not set width and height for H.264. In this case our
-        // DirectShow wrapper will consider this format as H264 with start codes.
-        // With width and height set DirectShow will try to decode it as H.264
-        // without start codes and it will fail. Once we switched to
-        // MediaFoundation for H.264 decoding we should set width and height
-        // similar to HEVC.
         caps = gst_caps_new_simple ("video/x-h264",
-                NULL, NULL);
+                "width", G_TYPE_INT, (gint)demux->videoFormat.uiWidth,
+                "height", G_TYPE_INT, (gint)demux->videoFormat.uiHeight,
+                NULL);
     }
     else if (demux->videoFormat.codecID == JFX_CODEC_ID_HEVC)
     {

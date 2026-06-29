@@ -40,7 +40,7 @@
 
 #include "fxplugins_common.h"
 
-#define MEDIA_FORMAT_DEBUG 0
+#define MEDIA_FORMAT_DEBUG 1
 
 // 3 buffers is enough for rendering. During testing 2 buffers is actually
 // enough, but in some case 3 were allocated.
@@ -72,6 +72,8 @@ GST_STATIC_PAD_TEMPLATE("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS(
+        // H.264
+        "video/x-h264; "
         // H.265
         "video/x-h265"
     ));
@@ -303,18 +305,34 @@ static void gst_mfwrapper_get_property(GObject *object, guint property_id, GValu
 static gboolean mfwrapper_is_decoder_by_codec_id_supported(GstMFWrapper *decoder, gint codec_id)
 {
     HRESULT hr = S_FALSE;
+    GstCaps *caps = NULL;
 
     switch (codec_id)
     {
-    case JFX_CODEC_ID_HEVC:
-        // Dummy caps to load H.265 decoder
-        GstCaps *caps = gst_caps_new_simple("video/x-h265",
-            "width", G_TYPE_INT, 1920,
-            "height", G_TYPE_INT, 1080,
-            NULL);
+        case JFX_CODEC_ID_H264:
+        {
+            // Dummy caps to load H.264 decoder
+            caps = gst_caps_new_simple("video/x-h264",
+                    "width", G_TYPE_INT, 1920,
+                    "height", G_TYPE_INT, 1080,
+                    NULL);
+            break;
+        }
+        case JFX_CODEC_ID_HEVC:
+        {
+            // Dummy caps to load H.265 decoder
+            caps = gst_caps_new_simple("video/x-h265",
+                    "width", G_TYPE_INT, 1920,
+                    "height", G_TYPE_INT, 1080,
+                    NULL);
+            break;
+        }
+    }
+
+    if (caps)
+    {
         hr = mfwrapper_load_decoder_caps(decoder, caps);
         gst_caps_unref(caps);
-        break;
     }
 
     if (hr == S_OK)
@@ -1149,8 +1167,8 @@ static HRESULT mfwrapper_configure_decoder_output_type(GstMFWrapper *decoder)
 
     // We should cache as much supported formats as possible.
     // Try them in order we prefered.
-    if (pOutputTypeIYUV)
-        hr = mfwrapper_set_decoder_output_type(decoder, pOutputTypeIYUV, false);
+//    if (pOutputTypeIYUV)
+//        hr = mfwrapper_set_decoder_output_type(decoder, pOutputTypeIYUV, false);
 
     // Try only if previous one failed
     if (hr != S_OK && pOutputTypeNV12)
@@ -1312,8 +1330,8 @@ static gint mfwrapper_process_output(GstMFWrapper *decoder)
         return PO_FLUSHING;
 
     HRESULT hr = decoder->pDecoder->GetOutputStatus(&dwFlags);
-    if (SUCCEEDED(hr) && dwFlags != MFT_OUTPUT_STATUS_SAMPLE_READY)
-        return PO_NEED_MORE_DATA;
+//    if (SUCCEEDED(hr) && dwFlags != MFT_OUTPUT_STATUS_SAMPLE_READY)
+//        return PO_NEED_MORE_DATA;
 
     hr = decoder->pDecoder->ProcessOutput(0, 1, &outputDataBuffer, &dwStatus);
     SafeRelease(&outputDataBuffer.pEvents);
@@ -1657,7 +1675,14 @@ static gboolean mfwrapper_get_mf_media_types(GstCaps *caps, GUID *pMajorType, GU
         mimetype = gst_structure_get_name(s);
         if (mimetype != NULL)
         {
-            if (strstr(mimetype, "video/x-h265") != NULL)
+            if (strstr(mimetype, "video/x-h264") != NULL)
+            {
+                *pMajorType = MFMediaType_Video;
+                *pSubType = MFVideoFormat_H264;
+
+                return TRUE;
+            }
+            else if (strstr(mimetype, "video/x-h265") != NULL)
             {
                 *pMajorType = MFMediaType_Video;
                 *pSubType = MFVideoFormat_HEVC;

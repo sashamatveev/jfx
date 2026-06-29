@@ -186,7 +186,7 @@ bool CGstAVPlaybackPipeline::IsCodecSupported(GstCaps *pCaps)
                 if (strstr(mimetype, "video/x-h264") != NULL) // H.264
                 {
                     gboolean is_supported = FALSE;
-                    g_object_set(m_Elements[VIDEO_DECODER], "codec-id", (gint)JFX_CODEC_ID_AVC1, NULL); // Check for AVC1 (MP4). For HLS we should get error early
+                    g_object_set(m_Elements[VIDEO_DECODER], "codec-id", (gint)JFX_CODEC_ID_H264, NULL); // Check for H.264 with start codes.
                     g_object_get(m_Elements[VIDEO_DECODER], "is-supported", &is_supported, NULL);
                     if (is_supported)
                     {
@@ -271,7 +271,7 @@ bool CGstAVPlaybackPipeline::LoadDecoder(GstCaps *pCaps)
             {
                 if (strstr(mimetype, "video/x-h264") != NULL) // H.264
                 {
-                    strVideoDecoderName = "dshowwrapper";
+                    strVideoDecoderName = "mfwrapper";
                 }
                 else if (strstr(mimetype, "video/x-h265") != NULL) // H.265
                 {
