@@ -47,6 +47,14 @@ typedef struct {
     JFX_CODEC_ID codecID;
     UINT32 uiWidth;
     UINT32 uiHeight;
+    UINT32 uiFrameRateNum;
+    UINT32 uiFrameRateDen;
+    UINT32 uiInterlaceMode;
+    UINT32 uiPixelAspectRatioNum;
+    UINT32 uiPixelAspectRatioDen;
+    UINT32 uiMPEG2Profile;
+    UINT32 uiMPEG2Level;
+    GstBuffer *sequence_header;
 } VideoFormat;
 
 G_BEGIN_DECLS

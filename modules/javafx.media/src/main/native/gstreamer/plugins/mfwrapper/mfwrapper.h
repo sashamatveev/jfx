@@ -84,6 +84,7 @@ struct _GstMFWrapper
     HRESULT hr_mfstartup;
 
     IMFTransform *pDecoder;
+    IMFMediaType *pDecoderInputType;
     IMFSample *pDecoderOutput;
     CMFGSTBuffer *pDecoderBuffer;
 
@@ -95,10 +96,13 @@ struct _GstMFWrapper
 
     guint width;
     guint height;
+    guint visibleWidth;
+    guint visibleHeight;
+    guint height;
     guint framerate_num;
     guint framerate_den;
 
-    guint defaultStride;
+    gint defaultStride;
     guint pixel_num;
     guint pixel_den;
 

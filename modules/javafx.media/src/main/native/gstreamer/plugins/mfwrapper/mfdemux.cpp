@@ -213,6 +213,14 @@ static void gst_mfdemux_init(GstMFDemux *demux)
     demux->videoFormat.codecID = JFX_CODEC_ID_UNKNOWN;
     demux->videoFormat.uiWidth = 3840;
     demux->videoFormat.uiHeight = 2160;
+    demux->videoFormat.uiFrameRateNum = 0;
+    demux->videoFormat.uiFrameRateDen = 0;
+    demux->videoFormat.uiInterlaceMode = MFVideoInterlace_Unknown;
+    demux->videoFormat.uiPixelAspectRatioNum = 0;
+    demux->videoFormat.uiPixelAspectRatioDen = 0;
+    demux->videoFormat.uiMPEG2Profile = 0;
+    demux->videoFormat.uiMPEG2Level = 0;
+    demux->videoFormat.sequence_header = NULL;
 
     demux->audio_src_pad = NULL;
     demux->video_src_pad = NULL;
@@ -261,6 +269,13 @@ static void gst_mfdemux_dispose(GObject* object)
         // INLINE - gst_buffer_unref()
         gst_buffer_unref(demux->audioFormat.codec_data);
         demux->audioFormat.codec_data = NULL;
+    }
+
+    if (demux->videoFormat.sequence_header != NULL)
+    {
+        // INLINE - gst_buffer_unref()
+        gst_buffer_unref(demux->videoFormat.sequence_header);
+        demux->videoFormat.sequence_header = NULL;
     }
 
     if (demux->cached_segment_event != NULL)
@@ -804,6 +819,42 @@ static void mfdemux_get_codec_data(GstMFDemux *demux, const GUID &guidKey,
     }
 }
 
+static void mfdemux_get_media_type_blob(const GUID &guidKey,
+                                        IMFMediaType *pMediaType,
+                                        GstBuffer **blob)
+{
+    UINT32 cbBlobSize = 0;
+
+    if (pMediaType == NULL || blob == NULL)
+        return;
+
+    HRESULT hr = pMediaType->GetBlobSize(guidKey, &cbBlobSize);
+    if (FAILED(hr) || cbBlobSize == 0)
+        return;
+
+    (*blob) = gst_buffer_new_allocate(NULL, (gsize)cbBlobSize, NULL);
+    if ((*blob) == NULL)
+        return;
+
+    GstMapInfo info;
+    if (gst_buffer_map((*blob), &info, GST_MAP_READWRITE))
+    {
+        hr = pMediaType->GetBlob(guidKey, info.data, cbBlobSize, NULL);
+        gst_buffer_unmap((*blob), &info);
+    }
+    else
+    {
+        hr = E_FAIL;
+    }
+
+    if (FAILED(hr))
+    {
+        // INLINE - gst_buffer_unref()
+        gst_buffer_unref((*blob));
+        (*blob) = NULL;
+    }
+}
+
 static gboolean mfdemux_configure_audio_stream(GstMFDemux *demux, gboolean *hasAudio)
 {
     HRESULT hr = S_OK;
@@ -981,11 +1032,54 @@ static gboolean mfdemux_configure_video_stream(GstMFDemux *demux, gboolean *hasV
     if (SUCCEEDED(hr) && (demux->videoFormat.codecID == JFX_CODEC_ID_H264 ||
                         demux->videoFormat.codecID == JFX_CODEC_ID_HEVC))
     {
-        MFGetAttributeSize(pMediaType, MF_MT_FRAME_SIZE,
-                           &demux->videoFormat.uiWidth,
-                           &demux->videoFormat.uiHeight);
-        // No need for codec data for video, since video streams with start codes
-        // and have embeded codec data.
+        if (FAILED(MFGetAttributeSize(pMediaType, MF_MT_FRAME_SIZE,
+                &demux->videoFormat.uiWidth, &demux->videoFormat.uiHeight)))
+        {
+            demux->videoFormat.uiWidth = 0;
+            demux->videoFormat.uiHeight = 0;
+        }
+
+        if (FAILED(MFGetAttributeRatio(pMediaType, MF_MT_FRAME_RATE,
+                &demux->videoFormat.uiFrameRateNum, &demux->videoFormat.uiFrameRateDen)))
+        {
+            demux->videoFormat.uiFrameRateNum = 0;
+            demux->videoFormat.uiFrameRateDen = 0;
+        }
+
+        if (FAILED(pMediaType->GetUINT32(MF_MT_INTERLACE_MODE,
+                &demux->videoFormat.uiInterlaceMode)))
+        {
+            demux->videoFormat.uiInterlaceMode = MFVideoInterlace_Unknown;
+        }
+
+        if (FAILED(MFGetAttributeRatio(pMediaType, MF_MT_PIXEL_ASPECT_RATIO,
+                &demux->videoFormat.uiPixelAspectRatioNum, &demux->videoFormat.uiPixelAspectRatioDen)))
+        {
+            demux->videoFormat.uiPixelAspectRatioNum = 0;
+            demux->videoFormat.uiPixelAspectRatioDen = 0;
+        }
+
+        if (FAILED(pMediaType->GetUINT32(MF_MT_MPEG2_PROFILE,
+                &demux->videoFormat.uiMPEG2Profile)))
+        {
+            demux->videoFormat.uiMPEG2Profile = 0;
+        }
+
+        if (FAILED(pMediaType->GetUINT32(MF_MT_MPEG2_LEVEL,
+                &demux->videoFormat.uiMPEG2Level)))
+        {
+            demux->videoFormat.uiMPEG2Level = 0;
+        }
+
+        if (demux->videoFormat.sequence_header != NULL)
+        {
+            // INLINE - gst_buffer_unref()
+            gst_buffer_unref(demux->videoFormat.sequence_header);
+            demux->videoFormat.sequence_header = NULL;
+        }
+
+        mfdemux_get_media_type_blob(MF_MT_MPEG_SEQUENCE_HEADER, pMediaType,
+                &demux->videoFormat.sequence_header);
     }
 
     SafeRelease(&pMediaType);
@@ -1029,6 +1123,48 @@ static gboolean mfdemux_configure_video_src_caps(GstMFDemux *demux)
 
     if (caps == NULL)
         return FALSE;
+
+    if (demux->videoFormat.uiFrameRateNum != 0 &&
+        demux->videoFormat.uiFrameRateDen != 0)
+    {
+        gst_caps_set_simple(caps, "framerate", GST_TYPE_FRACTION,
+                            (gint)demux->videoFormat.uiFrameRateNum,
+                            (gint)demux->videoFormat.uiFrameRateDen,
+                            NULL);
+    }
+
+    if (demux->videoFormat.uiInterlaceMode != MFVideoInterlace_Unknown)
+    {
+        gst_caps_set_simple(caps, "mf-interlace-mode", G_TYPE_UINT,
+                            demux->videoFormat.uiInterlaceMode, NULL);
+    }
+
+    if (demux->videoFormat.uiPixelAspectRatioNum != 0 &&
+        demux->videoFormat.uiPixelAspectRatioDen != 0)
+    {
+        gst_caps_set_simple(caps, "pixel-aspect-ratio", GST_TYPE_FRACTION,
+                            (gint)demux->videoFormat.uiPixelAspectRatioNum,
+                            (gint)demux->videoFormat.uiPixelAspectRatioDen,
+                            NULL);
+    }
+
+    if (demux->videoFormat.uiMPEG2Profile != 0)
+    {
+        gst_caps_set_simple(caps, "mf-mpeg2-profile", G_TYPE_UINT,
+                            demux->videoFormat.uiMPEG2Profile, NULL);
+    }
+
+    if (demux->videoFormat.uiMPEG2Level != 0)
+    {
+        gst_caps_set_simple(caps, "mf-mpeg2-level", G_TYPE_UINT,
+                            demux->videoFormat.uiMPEG2Level, NULL);
+    }
+
+    if (demux->videoFormat.sequence_header != NULL)
+    {
+        gst_caps_set_simple(caps, "mf-mpeg-sequence-header", GST_TYPE_BUFFER,
+                            demux->videoFormat.sequence_header, NULL);
+    }
 
     if (!demux->pGSTMFByteStream->IsSeekSupported())
     {
@@ -1198,6 +1334,14 @@ static GstFlowReturn mfdemux_deliver_sample(GstMFDemux *demux, GstPad* pad,
         if (bDiscontinuity)
             GST_BUFFER_FLAG_SET(pBuffer, GST_BUFFER_FLAG_DISCONT);
     }
+
+    UINT32 bCleanPoint = FALSE;
+    if (SUCCEEDED(hr) && SUCCEEDED(pMFSample->GetUINT32(MFSampleExtension_CleanPoint, &bCleanPoint)))
+    {
+        if (!bCleanPoint)
+            GST_BUFFER_FLAG_SET(pBuffer, GST_BUFFER_FLAG_DELTA_UNIT);
+    }
+
     if (SUCCEEDED(hr) && demux->force_discontinuity)
     {
         GST_BUFFER_FLAG_SET(pBuffer, GST_BUFFER_FLAG_DISCONT);

@@ -159,3 +159,4 @@ gst_event_get_structure	@157	NONAME
 gst_pad_pull_range	@158	NONAME
 gst_caps_to_string	@159	NONAME
 gst_event_parse_segment	@160	NONAME
+gst_structure_get_uint	@161	NONAME
