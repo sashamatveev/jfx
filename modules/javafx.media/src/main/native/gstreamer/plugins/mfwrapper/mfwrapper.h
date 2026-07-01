@@ -98,7 +98,6 @@ struct _GstMFWrapper
     guint height;
     guint visibleWidth;
     guint visibleHeight;
-    guint height;
     guint framerate_num;
     guint framerate_den;
 

@@ -240,8 +240,9 @@ static void gst_mfwrapper_init(GstMFWrapper *decoder)
 
     decoder->width = 1920;
     decoder->height = 1080;
-    decoder->visibleWidth = 1920;
-    decoder->visibleHeight = 1080;
+    // Should be 0 by default
+    decoder->visibleWidth = 0;
+    decoder->visibleHeight = 0;
     decoder->framerate_num = 2997;
     decoder->framerate_den = 100;
 
@@ -457,8 +458,8 @@ static void mfwrapper_set_src_caps(GstMFWrapper *decoder)
         srcCaps = gst_caps_new_simple("video/x-raw-yuv",
             "format", G_TYPE_STRING, "YV12",
             "framerate", GST_TYPE_FRACTION, decoder->framerate_num, decoder->framerate_den,
-            "width", G_TYPE_INT, decoder->width,
-            "height", G_TYPE_INT, decoder->height,
+            "width", G_TYPE_INT, decoder->visibleWidth ? decoder->visibleWidth : decoder->width,
+            "height", G_TYPE_INT, decoder->visibleHeight ? decoder->visibleHeight : decoder->height,
             "offset-y", G_TYPE_INT, offsetY,
             "offset-v", G_TYPE_INT, offsetV,
             "offset-u", G_TYPE_INT, offsetU,
@@ -475,8 +476,8 @@ static void mfwrapper_set_src_caps(GstMFWrapper *decoder)
             return;
 
         gst_caps_set_simple(srcCaps,
-            "width", G_TYPE_INT, decoder->width,
-            "height", G_TYPE_INT, decoder->height,
+            "width", G_TYPE_INT, decoder->visibleWidth ? decoder->visibleWidth : decoder->width,
+            "height", G_TYPE_INT, decoder->visibleHeight ? decoder->visibleHeight : decoder->height,
             "offset-y", G_TYPE_INT, offsetY,
             "offset-v", G_TYPE_INT, offsetV,
             "offset-u", G_TYPE_INT, offsetU,
@@ -991,6 +992,34 @@ static HRESULT mfwrapper_configure_buffer_pool(GstMFWrapper *decoder)
     return S_OK;
 }
 
+static gboolean mfwrapper_get_minimum_display_aperture(IMFMediaType *pMediaType,
+                                                       UINT32 *pVisibleWidth,
+                                                       UINT32 *pVisibleHeight)
+{
+    if (pMediaType == NULL || pVisibleWidth == NULL || pVisibleHeight == NULL)
+        return FALSE;
+
+    MFVideoArea area;
+    UINT32 cbBlobSize = 0;
+
+    HRESULT hr = pMediaType->GetBlobSize(MF_MT_MINIMUM_DISPLAY_APERTURE,
+                                         &cbBlobSize);
+    if (FAILED(hr) || cbBlobSize != sizeof(MFVideoArea))
+        return FALSE;
+
+    hr = pMediaType->GetBlob(MF_MT_MINIMUM_DISPLAY_APERTURE,
+                             reinterpret_cast<UINT8*>(&area),
+                             sizeof(MFVideoArea),
+                             NULL);
+    if (FAILED(hr))
+        return FALSE;
+
+    *pVisibleWidth = area.Area.cx;
+    *pVisibleHeight = area.Area.cy;
+
+    return TRUE;
+}
+
 static HRESULT mfwrapper_set_decoder_output_type(GstMFWrapper *decoder,
                                                  IMFMediaType *pOutputType,
                                                  gboolean bInitColorConverter)
@@ -1058,18 +1087,20 @@ static HRESULT mfwrapper_set_decoder_output_type(GstMFWrapper *decoder,
         }
         hr = S_OK; // Ok if we do not have above attribute
 
-        // // Get visible resolution. It should be used instead for caps, since
-        // // MF via MF_MT_FRAME_SIZE provides encoded resolution for H.264 at least.
-        // hr = MFGetAttributeSize(pOutputType, MF_MT_FRAME_SIZE, &width, &height);
-        // if (SUCCEEDED(hr) && (decoder->width != width || decoder->height != height))
-        // {
-        //     decoder->width = width;
-        //     decoder->height = height;
+        // Get visible resolution. It should be used instead for caps, since
+        // MF via MF_MT_FRAME_SIZE provides encoded resolution for H.264 in same cases.
+        if (mfwrapper_get_minimum_display_aperture(
+                pOutputType, &visibleWidth, &visibleHeight))
+        {
+            if (decoder->visibleWidth != visibleWidth || decoder->visibleHeight != visibleHeight)
+            {
+                decoder->visibleWidth = visibleWidth;
+                decoder->visibleHeight = visibleHeight;
 
-        //     decoder->is_set_caps = TRUE; // Only set caps if resolution changed, so
-        //     // we do not trigger it during decoder reload.
-        // }
-        // hr = S_OK; // Ok if we do not have above attribute
+                decoder->is_set_caps = TRUE; // Only set caps if resolution changed, so
+                // we do not trigger it during decoder reload.
+            }
+        }
 
         // Cache stride and pixel aspect ratio. Ok if we do not have it.
         UINT32 unDefaultStride = 0;

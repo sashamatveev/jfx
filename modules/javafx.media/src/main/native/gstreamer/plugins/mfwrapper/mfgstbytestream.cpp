@@ -62,6 +62,7 @@ void CMFGSTByteStream::Reset()
     m_readResult = S_OK;
     m_qwPosition = 0;
     m_bWaitForEvent = FALSE;
+    m_bIsAborted = FALSE;
     m_bIsEOS = FALSE;
     m_bIsEOSEventReceived = FALSE;
 }
@@ -105,6 +106,16 @@ HRESULT CMFGSTByteStream::CompleteReadData(HRESULT hr)
     return S_OK;
 }
 
+HRESULT CMFGSTByteStream::AbortRead(HRESULT hr)
+{
+    Lock();
+    m_bIsAborted = TRUE;
+    m_bWaitForEvent = FALSE;
+    Unlock();
+
+    return CompleteReadData(hr);
+}
+
 void CMFGSTByteStream::SignalEOS()
 {
     Lock();
@@ -139,6 +150,13 @@ HRESULT CMFGSTByteStream::BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallb
 
     if (m_pSinkPad == NULL)
         return E_POINTER;
+
+    Lock();
+    BOOL bIsAborted = m_bIsAborted;
+    Unlock();
+
+    if (bIsAborted)
+        return MF_E_OPERATION_CANCELLED;
 
     // Reject BeginRead() if we already have pending read
     if (m_pAsyncResult != NULL)
@@ -198,8 +216,7 @@ HRESULT CMFGSTByteStream::EndWrite(IMFAsyncResult *pResult, ULONG *pcbWritten)
 
 HRESULT CMFGSTByteStream::Flush()
 {
-    // No effect for read only streams like ours.
-    return S_OK;
+    return AbortRead(MF_E_OPERATION_CANCELLED);
 }
 
 HRESULT CMFGSTByteStream::GetCapabilities(DWORD *pdwCapabilities)
@@ -359,6 +376,12 @@ HRESULT CMFGSTByteStream::ReadData()
         // last buffer nicely and will return EOS if we do not read exact
         // amount of data.
         Lock();
+        if (m_bIsAborted)
+        {
+            Unlock();
+            return CompleteReadData(MF_E_OPERATION_CANCELLED);
+        }
+
         if (m_qwPosition < m_qwLength && (m_qwPosition + m_cbBytes) > m_qwLength)
             m_cbBytes = m_qwLength - m_qwPosition;
 

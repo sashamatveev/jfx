@@ -51,6 +51,7 @@ public:
     void SignalEOS();
     void ClearEOS();
     BOOL IsReload();
+    HRESULT AbortRead(HRESULT hr);
 
     // IMFByteStream
     HRESULT BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback,
@@ -102,6 +103,7 @@ private:
     HRESULT m_readResult;
 
     BOOL m_bWaitForEvent;
+    BOOL m_bIsAborted;
     BOOL m_bIsEOS;
     BOOL m_bIsEOSEventReceived;
     // Set to true if source is fragmented MP4

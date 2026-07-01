@@ -1583,14 +1583,10 @@ static gboolean mfdemux_activate_mode(GstPad *pad, GstObject *parent, GstPadMode
             demux->src_result = GST_FLOW_ERROR;
             g_mutex_unlock(&demux->lock);
 
-            // Lock pad. Streaming thread might be waiting for data, but
-            // it should release stream lock when doing it.
-            GST_PAD_STREAM_LOCK(demux->sink_pad);
-            // Unblock source reader if it was waiting for read.
+            // Unblock Source Reader creation or ReadSample if it is waiting
+            // for data from our byte stream.
             if (demux->pGSTMFByteStream)
-                demux->pGSTMFByteStream->CompleteReadData(E_FAIL);
-            // Unlock stream lock so streaming thread can continue.
-            GST_PAD_STREAM_UNLOCK(demux->sink_pad);
+                demux->pGSTMFByteStream->AbortRead(MF_E_OPERATION_CANCELLED);
 
             res = gst_pad_stop_task(pad);
         }
