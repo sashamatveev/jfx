@@ -84,6 +84,10 @@ uint32_t CGstPipelineFactory::CreatePlayerPipeline(CLocator* locator, CPipelineO
     // Save content type to options
     pOptions->SetContentType(locator->GetContentType());
 
+    uRetCode = ConfigurePipelineOptions(pOptions);
+    if (uRetCode != ERROR_NONE)
+        return uRetCode;
+
     CLocatorStream* streamLocator = (CLocatorStream*)locator;
     CStreamCallbacks *callbacks = streamLocator->GetCallbacks();
     CStreamCallbacks *audioCallbacks = streamLocator->GetAudioCallbacks();
@@ -139,6 +143,23 @@ uint32_t CGstPipelineFactory::CreatePlayerPipeline(CLocator* locator, CPipelineO
     LOWLEVELPERF_EXECTIMESTOP("CGstPipelineFactory::CreatePlayerPipeline()");
 
     return uRetCode;
+}
+
+// TODO: Move all configuration before creating pipeline
+uint32_t CGstPipelineFactory::ConfigurePipelineOptions(CPipelineOptions *pOptions)
+{
+    if (NULL == pOptions)
+        return ERROR_FUNCTION_PARAM_NULL;
+
+#if TARGET_OS_WIN32
+    if (CONTENT_TYPE_MP4 == pOptions->GetContentType() ||
+            CONTENT_TYPE_M4A == pOptions->GetContentType() ||
+            CONTENT_TYPE_M4V == pOptions->GetContentType()) {
+        pOptions->SetParserPullModeOnly(true);
+    }
+#endif
+
+    return ERROR_NONE;
 }
 
 // Creates pipeline based on options provided.
@@ -275,6 +296,10 @@ uint32_t CGstPipelineFactory::CreateSourceElement(CLocator *locator, CStreamCall
 
     bool needBuffer = callbacks->NeedBuffer();
     pOptions->SetBufferingEnabled(needBuffer);
+
+    // Check if we need to add buffer anyway for pull only parser
+    if (!isRandomAccess && pOptions->GetParserPullModeOnly())
+        needBuffer = true;
 
     if (needBuffer)
     {

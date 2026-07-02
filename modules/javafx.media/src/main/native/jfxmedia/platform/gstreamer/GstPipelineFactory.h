@@ -54,6 +54,8 @@ private:
     GstCaps*    FrameTypeToCaps(CVideoFrame::FrameType format);
     void        NegotiatePixelFormat(GstElement* pVideoSink, CPipelineOptions* pOptions);
 
+    uint32_t    ConfigurePipelineOptions(CPipelineOptions *pOptions);
+
     uint32_t    CreatePipeline(CPipelineOptions* pOptions, GstElementContainer* pElements, CPipeline** ppPipeline);
 
     uint32_t    CreateMP4Pipeline(GstElement* videosink, CPipelineOptions* pOptions, GstElementContainer* pElements, CPipeline** ppPipeline);

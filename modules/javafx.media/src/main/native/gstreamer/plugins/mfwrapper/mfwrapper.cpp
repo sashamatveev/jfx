@@ -40,7 +40,7 @@
 
 #include "fxplugins_common.h"
 
-#define MEDIA_FORMAT_DEBUG 1
+#define MEDIA_FORMAT_DEBUG 0
 
 // 3 buffers is enough for rendering. During testing 2 buffers is actually
 // enough, but in some case 3 were allocated.
