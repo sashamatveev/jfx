@@ -221,9 +221,12 @@ HRESULT CMFGSTByteStream::Flush()
 
 HRESULT CMFGSTByteStream::GetCapabilities(DWORD *pdwCapabilities)
 {
-    (*pdwCapabilities) |= MFBYTESTREAM_IS_READABLE;
-    (*pdwCapabilities) |= MFBYTESTREAM_IS_SEEKABLE;
-    (*pdwCapabilities) |= MFBYTESTREAM_IS_REMOTE;
+    if (pdwCapabilities == NULL)
+        return E_POINTER;
+
+    (*pdwCapabilities) = MFBYTESTREAM_IS_READABLE |
+                         MFBYTESTREAM_IS_SEEKABLE |
+                         MFBYTESTREAM_IS_REMOTE;
     return S_OK;
 }
 

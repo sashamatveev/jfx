@@ -1109,6 +1109,14 @@ static GstStateChangeReturn progress_buffer_change_state (GstElement *e,
 
     switch (transition)
     {
+        case GST_STATE_CHANGE_READY_TO_NULL:
+            if (element->cache)
+            {
+                destroy_cache(element->cache);
+                element->cache = NULL;
+            }
+            break;
+
         case GST_STATE_CHANGE_PAUSED_TO_READY:
             g_mutex_lock(&element->lock);
             element->srcresult = GST_FLOW_FLUSHING;
