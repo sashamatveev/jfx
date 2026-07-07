@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2024, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -54,6 +54,8 @@ private:
     GstCaps*    FrameTypeToCaps(CVideoFrame::FrameType format);
     void        NegotiatePixelFormat(GstElement* pVideoSink, CPipelineOptions* pOptions);
 
+    uint32_t    ConfigurePipelineOptions(CPipelineOptions *pOptions);
+
     uint32_t    CreatePipeline(CPipelineOptions* pOptions, GstElementContainer* pElements, CPipeline** ppPipeline);
 
     uint32_t    CreateMP4Pipeline(GstElement* videosink, CPipelineOptions* pOptions, GstElementContainer* pElements, CPipeline** ppPipeline);
@@ -77,9 +79,6 @@ private:
                                GstElementContainer* elements, GstElement** ppVideobin);
 
     GstElement* CreateElement(const char* strFactoryName);
-
-    // progressbuffer on-pad-added
-    static void OnBufferPadAdded(GstElement* element, GstPad* pad, GstElement* peer);
 
     // javasource signals
     static gint     SourceReadNextBlock(GstElement *src, gpointer data);
