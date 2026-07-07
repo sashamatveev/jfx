@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, 2026, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,35 +23,28 @@
  * questions.
  */
 
-package com.sun.jfx.incubator.scene.control.richtext;
+package com.sun.javafx.css.media;
 
-import java.io.IOException;
-import java.util.List;
-import jfx.incubator.scene.control.richtext.model.StyledInput;
-import jfx.incubator.scene.control.richtext.model.StyledSegment;
+import com.sun.javafx.css.parser.Token;
+import java.util.Map;
+import java.util.function.BiFunction;
+import java.util.function.BooleanSupplier;
 
-public class SegmentStyledInput implements StyledInput {
-    private final StyledSegment[] segments;
-    private int index;
+public final class MediaFeaturesShim {
 
-    public SegmentStyledInput(StyledSegment ... segments) {
-        this.segments = segments;
+    public static BiFunction<String, Token, MediaQuery> getDefault() {
+        return MediaFeatures.DEFAULT;
     }
 
-    @Override
-    public StyledSegment nextSegment() {
-        if (index < segments.length) {
-            return segments[index++];
-        }
-        return null;
+    public static void setDefault(BiFunction<String, Token, MediaQuery> value) {
+        MediaFeatures.DEFAULT = value;
     }
 
-    public static SegmentStyledInput of(List<StyledSegment> segments) {
-        StyledSegment[] ss = segments.toArray(new StyledSegment[segments.size()]);
-        return new SegmentStyledInput(ss);
+    public static Map<String, BooleanSupplier> getPlatforms() {
+        return MediaFeatures.PLATFORMS;
     }
 
-    @Override
-    public void close() throws IOException {
+    public static void setPlatforms(Map<String, BooleanSupplier> value) {
+        MediaFeatures.PLATFORMS = value;
     }
 }
