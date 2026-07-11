@@ -283,6 +283,12 @@ uint32_t CGstPipelineFactory::CreateSourceElement(CLocator *locator, CStreamCall
         g_object_set(javaSource, "mimetype", CONTENT_TYPE_FMP4, NULL);
     else if (streamMimeType == HLS_VALUE_MIMETYPE_AAC)
         g_object_set(javaSource, "mimetype", CONTENT_TYPE_AAC, NULL);
+    // Use CONTENT_TYPE_FMP4 for CONTENT_TYPE_MP4 and CONTENT_TYPE_M4V.
+    // qtdemux only accepts "video/quicktime" and "audio/x-m4a", so
+    // we convert "video/mp4" and "video/x-m4v" to "video/quicktime".
+    else if (CONTENT_TYPE_MP4 == locator->GetContentType() ||
+             CONTENT_TYPE_M4V == locator->GetContentType())
+        g_object_set(javaSource, "mimetype", CONTENT_TYPE_FMP4, NULL);
     else // Set mimetype to content type of locator anyway, so javasource
          // can send caps event which is required by GStreamer.
         g_object_set (javaSource, "mimetype", locator->GetContentType().c_str(), NULL);
