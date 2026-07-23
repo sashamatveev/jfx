@@ -48,6 +48,15 @@
 #define HLS_VALUE_MIMETYPE_FMP4 3
 #define HLS_VALUE_MIMETYPE_AAC  4
 
+// Queue settings common
+#define QUEUE_MAX_BYTES   0
+#define QUEUE_MAX_BUFFERS 10
+#define QUEUE_MAX_TIME    0
+
+// Queue settings HLS Live
+#define QUEUE_MAX_BYTES_HLSL   0
+#define QUEUE_MAX_BUFFERS_HLSL 180
+#define QUEUE_MAX_TIME_HLSL    (3 * GST_SECOND)
 
 //*************************************************************************************************
 //********** class CGstPipelineFactory
@@ -649,7 +658,7 @@ uint32_t CGstPipelineFactory::CreateAudioPipeline(bool bConvertFormat, CPipeline
 
     int flags = 0;
     GstElement* audiobin;
-    uRetCode = CreateAudioBin(pOptions->GetStreamParser(),
+    uRetCode = CreateAudioBin(pOptions, pOptions->GetStreamParser(),
                               pOptions->GetAudioDecoder(),
                               bConvertFormat, pElements, &flags, &audiobin);
     if (ERROR_NONE != uRetCode)
@@ -712,7 +721,8 @@ uint32_t CGstPipelineFactory::CreateAVPipeline(bool bConvertFormat, GstElement* 
     if (bAudioStream) {
         g_object_set(demuxer, "disable-mp2t-pts-reset", TRUE, NULL);
     }
-    if (pOptions->GetHLSModeEnabled()) {
+    if (pOptions->GetHLSModeEnabled() &&
+            strcmp(pOptions->GetStreamParser(), "mfdemux") == 0) {
         g_object_set(demuxer, "hls-mode", TRUE, NULL);
     }
     if (!gst_bin_add (GST_BIN (pipeline), source))
@@ -737,7 +747,8 @@ uint32_t CGstPipelineFactory::CreateAVPipeline(bool bConvertFormat, GstElement* 
             if (bAudioStream) {
                 g_object_set(audioDemuxer, "disable-mp2t-pts-reset", TRUE, NULL);
             }
-            if (pOptions->GetHLSModeEnabled()) {
+            if (pOptions->GetHLSModeEnabled() &&
+                    strcmp(pOptions->GetAudioStreamParser(), "mfdemux") == 0) {
                 g_object_set(audioDemuxer, "hls-mode", TRUE, NULL);
             }
 
@@ -749,7 +760,7 @@ uint32_t CGstPipelineFactory::CreateAVPipeline(bool bConvertFormat, GstElement* 
 
     int audioFlags = 0;
     GstElement *audiobin = NULL;
-    uRetCode = CreateAudioBin(NULL, pOptions->GetAudioDecoder(), bConvertFormat,
+    uRetCode = CreateAudioBin(pOptions, NULL, pOptions->GetAudioDecoder(), bConvertFormat,
                               pElements, &audioFlags, &audiobin);
     if (ERROR_NONE != uRetCode)
         return uRetCode;
@@ -778,7 +789,7 @@ uint32_t CGstPipelineFactory::CreateAVPipeline(bool bConvertFormat, GstElement* 
     }
 
     GstElement *videobin;
-    uRetCode = CreateVideoBin(pOptions->GetVideoDecoder(), pVideoSink, pElements, &videobin);
+    uRetCode = CreateVideoBin(pOptions, pOptions->GetVideoDecoder(), pVideoSink, pElements, &videobin);
     if (ERROR_NONE != uRetCode)
         return uRetCode;
 
@@ -794,12 +805,12 @@ uint32_t CGstPipelineFactory::CreateAVPipeline(bool bConvertFormat, GstElement* 
     return uRetCode;
 }
 
-uint32_t CGstPipelineFactory::CreateAudioBin(const char* strParserName, const char* strDecoderName,
-                                             bool bConvertFormat,
+uint32_t CGstPipelineFactory::CreateAudioBin(CPipelineOptions *pOptions, const char* strParserName,
+                                             const char* strDecoderName, bool bConvertFormat,
                                              GstElementContainer* elements, int* pFlags,
                                              GstElement** ppAudiobin)
 {
-    if ((NULL == strParserName && NULL == strDecoderName) || NULL == elements || NULL == pFlags || NULL == ppAudiobin)
+    if (NULL == pOptions || (NULL == strParserName && NULL == strDecoderName) || NULL == elements || NULL == pFlags || NULL == ppAudiobin)
         return ERROR_FUNCTION_PARAM_NULL;
 
     *ppAudiobin = gst_bin_new(NULL);
@@ -934,15 +945,37 @@ uint32_t CGstPipelineFactory::CreateAudioBin(const char* strParserName, const ch
         *pFlags |= AUDIO_DECODER_HAS_SOURCE_PROBE | AUDIO_DECODER_HAS_SINK_PROBE;
     }
 
-    // Switch off limiting of the audioqueue for bytes and buffers.
-    g_object_set(audioqueue, "max-size-bytes", (guint)0, "max-size-buffers", (guint)10, "max-size-time", (guint64)0, NULL);
+    // Configure audio queue
+    guint max_bytes = QUEUE_MAX_BYTES;
+    guint max_buffers = QUEUE_MAX_BUFFERS;
+    guint64 max_time = QUEUE_MAX_TIME;
+
+#if TARGET_OS_WIN32
+    // Special case for HLS on Windows due to source reader reload for
+    // each segment. We need to queue more data to avoid glitching when
+    // reload.
+    if (pOptions->GetHLSModeEnabled() &&
+            (pOptions->GetStreamMimeType() == HLS_VALUE_MIMETYPE_FMP4 ||
+             pOptions->GetAudioStreamMimeType() == HLS_VALUE_MIMETYPE_FMP4))
+    {
+        max_bytes = QUEUE_MAX_BYTES_HLSL;
+        max_buffers = QUEUE_MAX_BUFFERS_HLSL;
+        max_time = QUEUE_MAX_TIME_HLSL;
+    }
+#endif
+
+    g_object_set(audioqueue, "max-size-bytes", max_bytes, "max-size-buffers",
+            max_buffers, "max-size-time", max_time, NULL);
 
     return ERROR_NONE;
 }
 
-uint32_t CGstPipelineFactory::CreateVideoBin(const char* strDecoderName, GstElement* pVideoSink,
+uint32_t CGstPipelineFactory::CreateVideoBin(CPipelineOptions *pOptions, const char* strDecoderName, GstElement* pVideoSink,
                                              GstElementContainer* elements, GstElement** ppVideobin)
 {
+    if (NULL == pOptions)
+        return ERROR_FUNCTION_PARAM_NULL;
+
     *ppVideobin = gst_bin_new(NULL);
     if (NULL == *ppVideobin)
         return ERROR_GSTREAMER_BIN_CREATE;
@@ -1012,8 +1045,26 @@ uint32_t CGstPipelineFactory::CreateVideoBin(const char* strDecoderName, GstElem
     add(VIDEO_DECODER, videodec).
     add(VIDEO_SINK, pVideoSink);
 
-    // Switch off limiting of the videoqueue for bytes and buffers.
-    g_object_set(videoqueue, "max-size-bytes", (guint)0, "max-size-buffers", (guint)10, "max-size-time", (guint64)0, NULL);
+    // Configure audio queue
+    guint max_bytes = QUEUE_MAX_BYTES;
+    guint max_buffers = QUEUE_MAX_BUFFERS;
+    guint64 max_time = QUEUE_MAX_TIME;
+
+#if TARGET_OS_WIN32
+    // Special case for HLS on Windows due to source reader reload for
+    // each segment. We need to queue more data to avoid glitching when
+    // reload.
+    if (pOptions->GetHLSModeEnabled() &&
+            pOptions->GetStreamMimeType() == HLS_VALUE_MIMETYPE_FMP4)
+    {
+        max_bytes = QUEUE_MAX_BYTES_HLSL;
+        max_buffers = QUEUE_MAX_BUFFERS_HLSL;
+        max_time = QUEUE_MAX_TIME_HLSL;
+    }
+#endif
+
+    g_object_set(videoqueue, "max-size-bytes", max_bytes, "max-size-buffers",
+            max_buffers, "max-size-time", max_time, NULL);
     g_object_set(pVideoSink, "qos", TRUE, NULL);
 
     return ERROR_NONE;

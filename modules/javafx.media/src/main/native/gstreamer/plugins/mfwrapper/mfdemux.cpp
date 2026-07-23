@@ -193,6 +193,14 @@ static void gst_mfdemux_init(GstMFDemux *demux)
     demux->send_new_segment = FALSE;
     demux->start_task_on_first_segment = FALSE;
     demux->is_hls = FALSE;
+#if TRACE_ENABLE
+    demux->log_first_audio_pts = TRUE;
+    demux->log_first_video_pts = TRUE;
+    demux->last_audio_pts = 0;
+    demux->last_audio_dur = 0;
+    demux->last_video_pts = 0;
+    demux->last_video_dur = 0;
+#endif
 
     demux->rate = 1.0;
     demux->seek_position = 0;
@@ -326,7 +334,16 @@ static gboolean mfdemux_sink_event(GstPad* pad, GstObject *parent, GstEvent *eve
     {
     case GST_EVENT_SEGMENT:
     {
-        TRACE(DEMUX_SINK_EVENTS, "GST_EVENT_SEGMENT\n");
+#if TRACE_ENABLE
+        {
+            const GstSegment *segment = NULL;
+            gst_event_parse_segment(event, &segment);
+            TRACE(DEMUX_SINK_EVENTS, "GST_EVENT_SEGMENT start=%lld time=%lld position=%lld\n",
+                  segment != NULL ? segment->start : -1,
+                segment != NULL ? segment->time : -1,
+                segment != NULL ? segment->position : -1);
+        }
+#endif
 
         demux->force_discontinuity = TRUE;
         demux->is_eos = FALSE;
@@ -676,6 +693,25 @@ static void mfdemux_reload_demux(GstMFDemux *demux, gboolean bSeek)
         TRACE(DEMUX_RELOAD, "length=%llu\n", qwLength);
     }
 
+#if TRACE_ENABLE
+    TRACE(DEMUX_FIRST_AND_LAST_PTS, "Last sample PTS pad=%s pts=%lld dur=%lld\n",
+            "Audio",
+            demux->last_audio_pts,
+            demux->last_audio_dur);
+
+    TRACE(DEMUX_FIRST_AND_LAST_PTS, "Last sample PTS pad=%s pts=%lld dur=%lld\n",
+            "Video",
+            demux->last_video_pts,
+            demux->last_video_dur);
+
+    demux->log_first_audio_pts = TRUE;
+    demux->log_first_video_pts = TRUE;
+    demux->last_audio_pts = -1;
+    demux->last_audio_dur = -1;
+    demux->last_video_pts = -1;
+    demux->last_video_dur = -1;
+#endif
+
     demux->is_demux_initialized = FALSE;
     TRACE(DEMUX_RELOAD, "Reload completed start_task_on_first_segment=%d\n", demux->start_task_on_first_segment);
 }
@@ -709,6 +745,8 @@ static gboolean mfdemux_init_demux(GstMFDemux *demux, GstCaps *caps)
     }
 
     hr = MFCreateSourceReaderFromByteStream(demux->pIMFByteStream, NULL, &demux->pSourceReader);
+    TRACE(DEMUX_TASK, "MFCreateSourceReaderFromByteStream hr=0x%08X reader=%p\n",
+            hr, demux->pSourceReader);
     if (FAILED(hr) || demux->pSourceReader == NULL)
         return FALSE;
 
@@ -855,6 +893,31 @@ static void mfdemux_get_media_type_blob(const GUID &guidKey,
     }
 }
 
+// Only push caps event if caps are not set or if they change.
+// Caps events are serialized with frames and we will drain compressed
+// frames queue if we pushing unnecessary caps events.
+// It will cause video glitch.
+static void mfdemux_push_caps_if_needed(GstPad *pad, GstCaps *caps, gboolean *ret)
+{
+    if (pad == NULL || ret == NULL || caps == NULL)
+        return;
+
+    GstCaps *current_caps = gst_pad_get_current_caps(pad);
+    gboolean is_caps_equal = current_caps != NULL && gst_caps_is_equal(current_caps, caps);
+    if (current_caps)
+        gst_caps_unref(current_caps);
+
+    if (is_caps_equal)
+    {
+        *ret = TRUE; // Caps already valid
+        return;
+    }
+
+    GstEvent *caps_event = gst_event_new_caps(caps);
+    if (caps_event)
+        *ret = gst_pad_push_event(pad, caps_event);
+}
+
 static gboolean mfdemux_configure_audio_stream(GstMFDemux *demux, gboolean *hasAudio)
 {
     HRESULT hr = S_OK;
@@ -926,7 +989,6 @@ static gboolean mfdemux_configure_audio_src_caps(GstMFDemux *demux)
 {
     gboolean ret = FALSE;
     GstCaps *caps = NULL;
-    GstEvent *caps_event = NULL;
 
     if (demux->audioFormat.codecID != JFX_CODEC_ID_AAC)
         return FALSE; // We should not be called with unsupported codec
@@ -943,9 +1005,7 @@ static gboolean mfdemux_configure_audio_src_caps(GstMFDemux *demux)
         gst_caps_set_simple(caps, "codec_data", GST_TYPE_BUFFER,
                             demux->audioFormat.codec_data, NULL);
 
-    caps_event = gst_event_new_caps(caps);
-    if (caps_event)
-        ret = gst_pad_push_event(demux->audio_src_pad, caps_event);
+    mfdemux_push_caps_if_needed(demux->audio_src_pad, caps, &ret);
     gst_caps_unref(caps);
 
     return ret;
@@ -1100,7 +1160,6 @@ static gboolean mfdemux_configure_video_src_caps(GstMFDemux *demux)
 {
     gboolean ret = FALSE;
     GstCaps *caps = NULL;
-    GstEvent *caps_event = NULL;
 
     if (demux->videoFormat.codecID != JFX_CODEC_ID_H264 &&
         demux->videoFormat.codecID != JFX_CODEC_ID_HEVC)
@@ -1172,9 +1231,7 @@ static gboolean mfdemux_configure_video_src_caps(GstMFDemux *demux)
                             TRUE, NULL);
     }
 
-    caps_event = gst_event_new_caps(caps);
-    if (caps_event)
-        ret = gst_pad_push_event(demux->video_src_pad, caps_event);
+    mfdemux_push_caps_if_needed(demux->video_src_pad, caps, &ret);
     gst_caps_unref(caps);
 
     return ret;
@@ -1356,9 +1413,54 @@ static GstFlowReturn mfdemux_deliver_sample(GstMFDemux *demux, GstPad* pad,
     }
     else if (demux->cached_segment_event != NULL)
     {
-        mfdemux_push_sink_event(demux, demux->cached_segment_event);
+        GstSegment segment;
+        gst_event_copy_segment(demux->cached_segment_event, &segment);
+
+        // Adjust segment time to first sample time. For HLS Live time
+        // can start from any PTS. By default segment starts at 0, so pipeline
+        // will start from 0 and wait until PTS is reached. Thus we need to adjust
+        // it to start imidiately.
+        segment.start = GST_BUFFER_TIMESTAMP(pBuffer);
+        segment.position = GST_BUFFER_TIMESTAMP(pBuffer);
+
+        GstEvent *event = gst_event_new_segment(&segment);
+        gst_event_unref(demux->cached_segment_event);
         demux->cached_segment_event = NULL;
+
+#if TRACE_ENABLE
+        TRACE(DEMUX_SRC_EVENTS, "GST_EVENT_SEGMENT start=%lld time=%lld position=%lld\n",
+                segment.start, segment.time, segment.position);
+#endif
+
+        mfdemux_push_sink_event(demux, event);
     }
+
+#if TRACE_ENABLE
+    if (pad == demux->audio_src_pad)
+    {
+        demux->last_audio_pts = GST_BUFFER_TIMESTAMP_IS_VALID(pBuffer) ? GST_BUFFER_TIMESTAMP(pBuffer) : -1;
+        demux->last_audio_dur = GST_BUFFER_DURATION_IS_VALID(pBuffer) ? GST_BUFFER_DURATION(pBuffer) : -1;
+    }
+    if (pad == demux->video_src_pad)
+    {
+        demux->last_video_pts = GST_BUFFER_TIMESTAMP_IS_VALID(pBuffer) ? GST_BUFFER_TIMESTAMP(pBuffer) : -1;;
+        demux->last_video_dur = GST_BUFFER_DURATION_IS_VALID(pBuffer) ? GST_BUFFER_DURATION(pBuffer) : -1;
+    }
+
+    if ((demux->log_first_audio_pts && pad == demux->audio_src_pad) ||
+        (demux->log_first_video_pts && pad == demux->video_src_pad))
+    {
+        TRACE(DEMUX_FIRST_AND_LAST_PTS, "First sample PTS pad=%s pts=%lld dur=%lld\n",
+              GST_PAD_NAME(pad),
+              GST_BUFFER_TIMESTAMP_IS_VALID(pBuffer) ? GST_BUFFER_TIMESTAMP(pBuffer) : -1,
+              GST_BUFFER_DURATION_IS_VALID(pBuffer) ? GST_BUFFER_DURATION(pBuffer) : -1);
+
+        if (pad == demux->audio_src_pad)
+            demux->log_first_audio_pts = FALSE;
+        if (pad == demux->video_src_pad)
+            demux->log_first_video_pts = FALSE;
+    }
+#endif
 
     TRACE(DEMUX_OUTPUT_PTS, "PTS pad=%s pts=%lld dur=%lld discont=%d\n",
           GST_PAD_NAME(pad),

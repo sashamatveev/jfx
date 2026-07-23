@@ -169,11 +169,11 @@ GstFlowReturn cache_read_buffer_from_position2(Cache* cache, gint64 start_positi
     if (cache == NULL)
         return GST_FLOW_ERROR;
 
-    gint64 bytes_available = cache_bytes_available(cache, start_position);
+    guint64 bytes_available = cache_bytes_available(cache, start_position);
     if (bytes_available == 0)
         return GST_FLOW_FLUSHING;
 
-    if ((gint64)size < bytes_available)
+    if ((guint64)size < bytes_available)
         size = bytes_available;
 
     return cache_read_buffer_from_position(cache, start_position, size, buffer);
@@ -221,10 +221,10 @@ gboolean cache_has_enough_data2(Cache* cache, guint64 read_position, guint size)
     return FALSE;
 }
 
-gint64 cache_bytes_available(Cache* cache, guint64 read_position)
+guint64 cache_bytes_available(Cache* cache, guint64 read_position)
 {
     if (read_position < cache->write_position)
-        return (cache->write_position - read_position);
+        return (guint64)(cache->write_position - read_position);
     else
         return 0;
 }

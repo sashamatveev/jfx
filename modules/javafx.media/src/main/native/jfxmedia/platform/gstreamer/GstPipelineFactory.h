@@ -73,10 +73,13 @@ private:
     uint32_t    CreateAVPipeline(bool bConvertFormat, GstElement* pVideoSink, CPipelineOptions* pOptions, GstElementContainer* pElements, CPipeline** ppPipeline);
 
 
-    uint32_t    CreateAudioBin(const char* strParserName, const char* strDecoderName, bool bConvertFormat,
-                               GstElementContainer* elements, int* pFlags, GstElement** pAudiobin);
-    uint32_t    CreateVideoBin(const char* strDecoderName, GstElement* pVideoSink,
-                               GstElementContainer* elements, GstElement** ppVideobin);
+    uint32_t    CreateAudioBin(CPipelineOptions *pOptions, const char* strParserName,
+                               const char* strDecoderName, bool bConvertFormat,
+                               GstElementContainer* elements, int* pFlags,
+                               GstElement** pAudiobin);
+    uint32_t    CreateVideoBin(CPipelineOptions *pOptions, const char* strDecoderName,
+                               GstElement* pVideoSink, GstElementContainer* elements,
+                               GstElement** ppVideobin);
 
     GstElement* CreateElement(const char* strFactoryName);
 

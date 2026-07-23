@@ -212,6 +212,9 @@ static void gst_mfwrapper_init(GstMFWrapper *decoder)
     decoder->is_decoder_error = FALSE;
     decoder->is_force_discontinuity = FALSE;
     decoder->is_force_output_discontinuity = FALSE;
+#if TRACE_ENABLE
+    decoder->trace_first_input_sample = TRUE;
+#endif
 
     // Initialize Media Foundation
     bool bCallCoUninitialize = true;
@@ -1470,7 +1473,17 @@ static GstFlowReturn mfwrapper_chain(GstPad *pad, GstObject *parent, GstBuffer *
     gint pi_ret = PI_FAILED;
     gint po_ret = PO_FAILED;
 
-    TRACE(DECODER_INPUT_PTS, "H.265 PTS IN pad=%s pts=%lld dur=%lld discont=%d\n",
+#if TRACE_ENABLE
+    if (decoder->trace_first_input_sample)
+    {
+        TRACE(DECODER_FIRST_PTS, "First input sample PTS=%lld dur=%lld\n",
+              GST_BUFFER_TIMESTAMP_IS_VALID(buf) ? GST_BUFFER_TIMESTAMP(buf) : -1,
+              GST_BUFFER_DURATION_IS_VALID(buf) ? GST_BUFFER_DURATION(buf) : -1);
+        decoder->trace_first_input_sample = FALSE;
+    }
+#endif
+
+    TRACE(DECODER_INPUT_PTS, "PTS IN pad=%s pts=%lld dur=%lld discont=%d\n",
           GST_PAD_NAME(pad),
           GST_BUFFER_TIMESTAMP_IS_VALID(buf) ? GST_BUFFER_TIMESTAMP(buf) : -1,
           GST_BUFFER_DURATION_IS_VALID(buf) ? GST_BUFFER_DURATION(buf) : -1,
@@ -1661,7 +1674,17 @@ static gboolean mfwrapper_sink_event(GstPad* pad, GstObject *parent, GstEvent *e
     {
     case GST_EVENT_SEGMENT:
     {
-        TRACE(DECODER_SINK_EVENTS, "GST_EVENT_SEGMENT\n");
+#if TRACE_ENABLE
+        {
+            const GstSegment *segment = NULL;
+            gst_event_parse_segment(event, &segment);
+            TRACE(DECODER_SINK_EVENTS, "GST_EVENT_SEGMENT start=%lld time=%lld position=%lld\n",
+                    segment != NULL ? segment->start : -1,
+                    segment != NULL ? segment->time : -1,
+                    segment != NULL ? segment->position : -1);
+            decoder->trace_first_input_sample = TRUE;
+        }
+#endif
         decoder->is_force_discontinuity = TRUE;
         ret = mfwrapper_push_sink_event(decoder, event);
         decoder->is_eos_received = FALSE;

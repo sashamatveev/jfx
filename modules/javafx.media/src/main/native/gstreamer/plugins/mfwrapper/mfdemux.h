@@ -32,7 +32,8 @@
 #include <mfidl.h>
 #include <mfreadwrite.h>
 
-#include <mfgstbytestream.h>
+#include "mfgstbytestream.h"
+#include "mftrace.h"
 
 #include "fxplugins_common.h"
 
@@ -92,6 +93,15 @@ struct _GstMFDemux
     gboolean send_new_segment;
     gboolean start_task_on_first_segment;
     gboolean is_hls;
+#if TRACE_ENABLE
+    gboolean log_first_audio_pts;
+    gboolean log_first_video_pts;
+    GstClockTime last_audio_pts;
+    GstClockTime last_audio_dur;
+    GstClockTime last_video_pts;
+    GstClockTime last_video_dur;
+#endif
+
 
     gdouble rate;
     gint64 seek_position;

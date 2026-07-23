@@ -160,3 +160,4 @@ gst_structure_set	@158	NONAME
 gst_util_group_id_next	@159	NONAME
 gst_value_list_get_value	@160	NONAME
 gst_video_alignment_reset	@161	NONAME
+gst_caps_is_equal	@162	NONAME

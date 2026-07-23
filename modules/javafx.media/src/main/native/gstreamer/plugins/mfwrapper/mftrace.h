@@ -30,24 +30,26 @@
 #include <stdarg.h>
 #include <string.h>
 
-#define TRACE_ENABLE 1
+#define TRACE_ENABLE 0
 
 // Enable trace categories
 // Decoder (mfwrapper)
 #define DECODER_SINK_EVENTS 0
+#define DECODER_FIRST_PTS   0
 #define DECODER_OUTPUT_PTS  0
 #define DECODER_INPUT_PTS   0
 
 // Demux
-#define DEMUX_SINK_EVENTS   0
-#define DEMUX_SRC_EVENTS    0
-#define DEMUX_RELOAD        0
-#define DEMUX_READ_SAMPLE   0
-#define DEMUX_OUTPUT_PTS    0
-#define DEMUX_TASK          0
+#define DEMUX_SINK_EVENTS        0
+#define DEMUX_SRC_EVENTS         0
+#define DEMUX_RELOAD             0
+#define DEMUX_READ_SAMPLE        0
+#define DEMUX_FIRST_AND_LAST_PTS 0
+#define DEMUX_OUTPUT_PTS         0
+#define DEMUX_TASK               0
 
 // Byte Stream
-#define BYTE_STREAM         0
+#define BYTE_STREAM 0
 
 #if TRACE_ENABLE
 static inline const char *trace_filename(const char *path)

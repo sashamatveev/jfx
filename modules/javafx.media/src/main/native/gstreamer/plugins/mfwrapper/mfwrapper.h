@@ -28,6 +28,7 @@
 
 #include <gst/gst.h>
 
+#include "mftrace.h"
 #include "mfgstbuffer.h"
 
 #include <mfapi.h>
@@ -80,6 +81,9 @@ struct _GstMFWrapper
 
     gboolean is_force_discontinuity;
     gboolean is_force_output_discontinuity;
+#if TRACE_ENABLE
+    gboolean trace_first_input_sample;
+#endif
 
     HRESULT hr_mfstartup;
 
