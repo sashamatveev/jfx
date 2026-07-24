@@ -48,6 +48,9 @@
 // 6 buffers max, just in case.
 #define MAX_BUFFERS 6
 
+// Nalu length size in bytes
+#define NALU_LENGTH_SIZE 4
+
 enum
 {
     PROP_0,
