@@ -1382,10 +1382,10 @@ final class HLSConnectionHolder extends ConnectionHolder {
                         sequenceNumberUpdated = false;
                     } else if (isInitSegment) {
                         if (mediaFiles.isEmpty()) {
-                            mediaFiles.add(URI);
+                            mediaFiles.add(uri);
                             mediaFilesDiscontinuities.add(isDiscontinuity);
-                        } else if (!mediaFiles.get(0).equals(URI)) {
-                            mediaFiles.set(0, URI);
+                        } else if (!mediaFiles.get(0).equals(uri)) {
+                            mediaFiles.set(0, uri);
                             mediaFilesDiscontinuities.set(0, isDiscontinuity);
                             forceDiscontinuity = true;
                         }
@@ -1449,11 +1449,7 @@ final class HLSConnectionHolder extends ConnectionHolder {
                     return null;
                 }
 
-                if (baseURI != null) {
-                    return baseURI + mediaFiles.get(mediaFileIndex);
-                } else {
-                    return mediaFiles.get(mediaFileIndex);
-                }
+                return mediaFiles.get(mediaFileIndex);
             }
         }
 
